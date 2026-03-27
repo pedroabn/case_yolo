@@ -2,26 +2,33 @@ import json
 import boto3
 import os
 import uuid
+import re
 from datetime import datetime
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Key, Attr
 
 # Configuração do DynamoDB
 dynamodb = boto3.resource('dynamodb')
 TABLE_NAME = os.environ.get('TABLE_NAME', 'YoloPeople')
 table = dynamodb.Table(TABLE_NAME)
 
+def normalize_phone(phone):
+    if not phone:
+        return ""
+    return re.sub(r'\D', '', phone)[:11]
+
 def lambda_handler(event, context):
     """
     Handler principal para operações CRUD de pessoas.
-    Usa 'id' (UUID) como chave primária.
+    Usa 'id' (UUID ou numérico) como chave primária.
     """
     http_method = event.get('httpMethod')
-    path_params = event.get('pathParameters')
-    query_params = event.get('queryStringParameters')
+    path_params = event.get('pathParameters') or {}
+    query_params = event.get('queryStringParameters') or {}
     
     try:
         if http_method == 'GET':
-            if path_params and 'id' in path_params:
+            if 'id' in path_params and path_params['id']:
                 return get_person(path_params['id'])
             return list_people(query_params)
             
@@ -45,17 +52,24 @@ def lambda_handler(event, context):
         return respond(500, {'message': str(e)})
 
 def list_people(params):
-    filter_type = params.get('type') if params else None
+    filter_type = params.get('tipo') if params else None
+    search_term = params.get('search') if params else None
     
     if filter_type and filter_type != 'Todos':
         response = table.query(
             IndexName='TipoIndex',
-            KeyConditionExpression=boto3.dynamodb.conditions.Key('tipo').eq(filter_type)
+            KeyConditionExpression=Key('tipo').eq(filter_type)
         )
+        items = response.get('Items', [])
     else:
         response = table.scan()
+        items = response.get('Items', [])
         
-    return respond(200, response.get('Items', []))
+    if search_term:
+        search_lower = search_term.lower()
+        items = [item for item in items if search_lower in item.get('nome', '').lower() or search_lower in item.get('email', '').lower()]
+        
+    return respond(200, items)
 
 def get_person(person_id):
     response = table.get_item(Key={'id': person_id})
@@ -71,13 +85,16 @@ def create_person(data):
     # Verifica se o e-mail já existe (único)
     existing = table.query(
         IndexName='EmailIndex',
-        KeyConditionExpression=boto3.dynamodb.conditions.Key('email').eq(data['email'])
+        KeyConditionExpression=Key('email').eq(data['email'])
     )
     if existing.get('Items'):
         return respond(400, {'message': 'E-mail já cadastrado para outro usuário'})
         
-    data['id'] = str(uuid.uuid4())
+    data['id'] = data.get('id', str(uuid.uuid4()))
     data['dataCadastro'] = datetime.now().strftime('%Y-%m-%d')
+    if 'telefone' in data:
+        data['telefone'] = normalize_phone(data['telefone'])
+        
     table.put_item(Item=data)
     return respond(201, data)
 
@@ -89,11 +106,14 @@ def update_person(person_id, data):
     if 'email' in data:
         existing = table.query(
             IndexName='EmailIndex',
-            KeyConditionExpression=boto3.dynamodb.conditions.Key('email').eq(data['email'])
+            KeyConditionExpression=Key('email').eq(data['email'])
         )
         for item in existing.get('Items', []):
             if item['id'] != person_id:
                 return respond(400, {'message': 'Este e-mail já está em uso por outro usuário'})
+                
+    if 'telefone' in data:
+        data['telefone'] = normalize_phone(data['telefone'])
         
     # Constrói expressão de update dinamicamente
     update_expr = "set "
@@ -112,14 +132,14 @@ def update_person(person_id, data):
     update_expr = update_expr.rstrip(", ")
     
     try:
-        table.update_item(
+        response = table.update_item(
             Key={'id': person_id},
             UpdateExpression=update_expr,
             ExpressionAttributeValues=attr_values,
             ExpressionAttributeNames=attr_names,
             ReturnValues="ALL_NEW"
         )
-        return respond(200, {'message': 'Atualizado com sucesso'})
+        return respond(200, response.get('Attributes', {}))
     except ClientError as e:
         return respond(400, {'message': e.response['Error']['Message']})
 
@@ -132,7 +152,9 @@ def respond(status_code, body):
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
         },
         'body': json.dumps(body) if body is not None else ""
     }
