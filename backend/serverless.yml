@@ -2,7 +2,7 @@ service: yolo-coliving-api
 
 provider:
   name: aws
-  runtime: python3.9
+  runtime: python3.11
   region: us-east-1
   environment:
     TABLE_NAME: ${self:service}-people-table

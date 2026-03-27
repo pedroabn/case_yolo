@@ -8,6 +8,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
 import { Person, PersonType, PERSON_TYPES } from './types';
 
+// URL base da API: aponta para o API Gateway da AWS Lambda.
+// Em produção, defina VITE_API_URL no .env com a URL do API Gateway.
+// Exemplo: VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
@@ -41,16 +44,25 @@ export default function App() {
 
     return () => clearTimeout(delayDebounceFn);
   }, [filter, searchTerm]);
+
+  /**
+   * Busca pessoas diretamente da função AWS Lambda via API Gateway.
+   * Os parâmetros `tipo` e `search` são passados como query strings.
+   */
   const fetchPeople = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${API_BASE_URL}/api/people?tipo=${filter}&search=${searchTerm}`);
-      // Garantir que o dado recebido seja um array
+      const params: Record<string, string> = {};
+      if (filter && filter !== 'Todos') params.tipo = filter;
+      if (searchTerm) params.search = searchTerm;
+
+      const response = await axios.get(`${API_BASE_URL}/people`, { params });
+      // Garante que o dado recebido seja um array
       const data = Array.isArray(response.data) ? response.data : [];
       setPeople(data);
     } catch (error) {
       showNotification('Erro ao carregar pessoas', 'error');
-      setPeople([]); // Garante que people continue sendo um array em caso de erro
+      setPeople([]);
     } finally {
       setLoading(false);
     }
@@ -61,16 +73,20 @@ export default function App() {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  /**
+   * Salva (cria ou atualiza) uma pessoa via AWS Lambda.
+   * POST /people para criação, PUT /people/{id} para atualização.
+   */
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
     try {
       setIsSaving(true);
       if (editingPerson) {
-        await axios.put(`${API_BASE_URL}/api/people/${editingPerson.id}`, formData);
+        await axios.put(`${API_BASE_URL}/people/${editingPerson.id}`, formData);
         showNotification('Cadastro atualizado com sucesso!', 'success');
       } else {
-        await axios.post(`${API_BASE_URL}/api/people`, formData);
+        await axios.post(`${API_BASE_URL}/people`, formData);
         showNotification('Pessoa cadastrada com sucesso!', 'success');
       }
       resetForm();
@@ -88,11 +104,15 @@ export default function App() {
     setDeleteId(id);
   };
 
+  /**
+   * Confirma e executa a exclusão via AWS Lambda.
+   * DELETE /people/{id}
+   */
   const confirmDelete = async () => {
     if (!deleteId) return;
     try {
       setIsSaving(true);
-      await axios.delete(`${API_BASE_URL}/api/people/${deleteId}`);
+      await axios.delete(`${API_BASE_URL}/people/${deleteId}`);
       showNotification('Registro excluído com sucesso!', 'success');
       fetchPeople();
     } catch (error: any) {
@@ -264,45 +284,41 @@ export default function App() {
                               </div>
                             )}
                             <div>
-                              <div className="font-medium text-zinc-900">{person.nome}</div>
-                              <div className="text-xs text-zinc-400 font-mono">{person.id.split('-')[0]}</div>
+                              <p className="font-semibold text-zinc-900">{person.nome}</p>
+                              <p className="text-xs text-zinc-400">{person.endereco || '—'}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-zinc-600">{person.email}</div>
-                          <div className="text-sm text-zinc-400">{person.telefone}</div>
-                          {person.endereco && (
-                            <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1">
-                              <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                              {person.endereco}
-                            </div>
-                          )}
+                          <p className="text-sm text-zinc-700">{person.email}</p>
+                          <p className="text-xs text-zinc-400">{person.telefone}</p>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                            ${person.tipo === 'Hóspede' ? 'bg-blue-50 text-blue-700' : 
-                              person.tipo === 'Proprietário' ? 'bg-purple-50 text-purple-700' :
-                              person.tipo === 'Operador' ? 'bg-amber-50 text-amber-700' :
-                              'bg-emerald-50 text-emerald-700'}
+                            ${person.tipo === 'Hóspede' ? 'bg-blue-50 text-blue-700' : ''}
+                            ${person.tipo === 'Proprietário' ? 'bg-purple-50 text-purple-700' : ''}
+                            ${person.tipo === 'Operador' ? 'bg-emerald-50 text-emerald-700' : ''}
+                            ${person.tipo === 'Fornecedor' ? 'bg-amber-50 text-amber-700' : ''}
                           `}>
                             {person.tipo}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-zinc-500">
-                          {new Date(person.dataCadastro).toLocaleDateString('pt-BR')}
+                          {person.dataCadastro}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
+                            <button
                               onClick={() => startEdit(person)}
-                              className="p-2 text-zinc-400 hover:text-[#df2180] hover:bg-[#df2180]/5 rounded-lg border border-transparent hover:border-[#df2180]/20 transition-all"
+                              className="p-2 rounded-lg hover:bg-zinc-100 text-zinc-500 hover:text-zinc-900 transition-colors"
+                              title="Editar"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
-                            <button 
+                            <button
                               onClick={() => handleDelete(person.id)}
-                              className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all"
+                              className="p-2 rounded-lg hover:bg-red-50 text-zinc-500 hover:text-red-600 transition-colors"
+                              title="Excluir"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -327,171 +343,130 @@ export default function App() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={resetForm}
-              className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm"
+              className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"
             />
             <motion.div 
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-10 overflow-hidden"
+              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold flex items-center gap-3 text-zinc-900">
-                  {editingPerson ? <Edit2 className="w-5 h-5 text-[#df2180]" /> : <UserPlus className="w-5 h-5 text-[#df2180]" />}
-                  {editingPerson ? 'Atualizar Cadastro' : 'Novo Cadastro'}
+              <div className="flex items-center justify-between p-6 border-b border-zinc-100">
+                <h2 className="text-xl font-bold text-zinc-900">
+                  {editingPerson ? 'Editar Cadastro' : 'Nova Pessoa'}
                 </h2>
-                <button onClick={resetForm} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
-                  <X className="w-5 h-5 text-zinc-400" />
+                <button onClick={resetForm} className="p-2 rounded-lg hover:bg-zinc-100 transition-colors">
+                  <X className="w-5 h-5 text-zinc-500" />
                 </button>
               </div>
-
-              <form onSubmit={handleSave} className="space-y-10">
+              
+              <form onSubmit={handleSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                 {formError && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-2 bg-red-50 border border-red-100 rounded-lg flex items-center gap-2 text-red-600 text-xs font-medium"
-                  >
-                    <AlertCircle className="w-3 h-3 shrink-0" />
-                    {formError}
-                  </motion.div>
+                  <div className="flex items-center gap-2 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{formError}</span>
+                  </div>
                 )}
-                
-                <div className="flex flex-col md:flex-row md:items-start gap-10">
-                  {/* Left Column: Avatar */}
-                  <div className="flex flex-col items-center shrink-0 md:pt-8">
-                    <div className="relative group">
-                      <div className="w-24 h-24 rounded-full bg-zinc-100 border-2 border-dashed border-zinc-300 flex items-center justify-center overflow-hidden transition-all group-hover:border-[#df2180]">
-                        {formData.avatarUrl ? (
-                          <img 
-                            src={formData.avatarUrl} 
-                            alt="Preview" 
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <User className="w-8 h-8 text-[#2595d0]" />
-                        )}
-                        <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                          <Camera className="w-5 h-5 text-white" />
-                          <input 
-                            type="file" 
-                            className="hidden" 
-                            accept="image/*"
-                            onChange={handleFileChange}
-                          />
-                        </label>
-                      </div>
-                      {formData.avatarUrl && (
-                        <button 
-                          type="button"
-                          onClick={() => setFormData({ ...formData, avatarUrl: '' })}
-                          className="absolute -top-1 -right-1 bg-white shadow-md rounded-full p-1 text-zinc-400 hover:text-red-500 border border-zinc-100"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-zinc-400 mt-1 font-bold uppercase tracking-tighter">Foto</p>
-                  </div>
 
-                  {/* Right Column: Main Info */}
-                  <div className="flex-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider">Nome Completo</label>
-                        <input 
-                          type="text" 
-                          required
-                          className="input-field w-full text-sm"
-                          value={formData.nome}
-                          onChange={e => setFormData({...formData, nome: e.target.value})}
-                          placeholder="Ex: Nome completo"
-                        />
+                {/* Avatar Upload */}
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    {formData.avatarUrl ? (
+                      <img src={formData.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-zinc-200" />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center border-2 border-zinc-200">
+                        <User className="w-8 h-8 text-zinc-400" />
                       </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider">Tipo</label>
-                        <select 
-                          className="input-field w-full text-sm"
-                          value={formData.tipo}
-                          onChange={e => setFormData({...formData, tipo: e.target.value as PersonType})}
-                        >
-                          {PERSON_TYPES.map(type => (
-                            <option key={type} value={type}>{type}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider">E-mail</label>
-                        <input 
-                          type="email" 
-                          required
-                          className="input-field w-full text-sm"
-                          value={formData.email}
-                          onChange={e => setFormData({...formData, email: e.target.value})}
-                          placeholder="email@email.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider">Telefone</label>
-                        <input 
-                          type="tel" 
-                          required
-                          className="input-field w-full text-sm"
-                          value={formData.telefone}
-                          onChange={e => {
-                            let val = e.target.value.replace(/\D/g, '');
-                            if (val.length > 11) val = val.slice(0, 11);
-                            if (val.length > 2) val = `(${val.slice(0, 2)}) ${val.slice(2)}`;
-                            if (val.length > 9) val = `${val.slice(0, 9)}-${val.slice(9)}`;
-                            setFormData({...formData, telefone: val});
-                          }}
-                          placeholder="(81) 99999-9999"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Address Section (Full Width) */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-x-12 gap-y-10">
-                  <div className="md:col-span-1">
-                    <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider flex items-center justify-between">
-                      CEP
-                      {isFetchingCep && <Loader2 className="w-3 h-3 animate-spin text-[#df2180]" />}
+                    )}
+                    <label className="absolute -bottom-1 -right-1 p-1.5 bg-white border border-zinc-200 rounded-full cursor-pointer hover:bg-zinc-50 transition-colors shadow-sm">
+                      <Camera className="w-3 h-3 text-zinc-600" />
+                      <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                     </label>
-                    <input 
-                      type="text" 
-                      className="input-field w-full text-sm"
-                      value={formData.cep}
-                      onChange={e => {
-                        let val = e.target.value.replace(/\D/g, '');
-                        if (val.length > 8) val = val.slice(0, 8);
-                        if (val.length > 5) val = `${val.slice(0, 5)}-${val.slice(5)}`;
-                        setFormData({...formData, cep: val});
-                      }}
-                      onBlur={handleCepBlur}
-                      placeholder="00000-000"
-                    />
                   </div>
-                  <div className="md:col-span-3">
-                    <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider">Endereço / Localização</label>
-                    <input 
-                      type="text" 
-                      className="input-field w-full text-sm"
-                      value={formData.endereco}
-                      onChange={e => setFormData({...formData, endereco: e.target.value})}
-                      placeholder="Rua, Número, Bairro, Cidade - UF"
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-zinc-700 mb-1">Nome Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.nome}
+                      onChange={e => setFormData({ ...formData, nome: e.target.value })}
+                      className="input-field w-full"
+                      placeholder="Nome da pessoa"
                     />
                   </div>
                 </div>
-                
-                <div className="pt-4 flex gap-3">
-                  <button type="submit" className="btn-primary flex-1 py-3 text-base font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#df2180]/20">
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1">E-mail *</label>
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={e => setFormData({ ...formData, email: e.target.value })}
+                      className="input-field w-full"
+                      placeholder="email@exemplo.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1">Telefone</label>
+                    <input
+                      type="tel"
+                      value={formData.telefone}
+                      onChange={e => setFormData({ ...formData, telefone: e.target.value })}
+                      className="input-field w-full"
+                      placeholder="(11) 99999-9999"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1">Tipo *</label>
+                  <select
+                    required
+                    value={formData.tipo}
+                    onChange={e => setFormData({ ...formData, tipo: e.target.value as PersonType })}
+                    className="input-field w-full"
+                  >
+                    {PERSON_TYPES.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1">CEP</label>
+                    <input
+                      type="text"
+                      value={formData.cep}
+                      onChange={e => setFormData({ ...formData, cep: e.target.value })}
+                      onBlur={handleCepBlur}
+                      className="input-field w-full"
+                      placeholder="00000-000"
+                      maxLength={9}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1">
+                      Endereço {isFetchingCep && <Loader2 className="inline w-3 h-3 animate-spin ml-1" />}
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.endereco}
+                      onChange={e => setFormData({ ...formData, endereco: e.target.value })}
+                      className="input-field w-full"
+                      placeholder="Preenchido automaticamente"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button type="submit" className="btn-primary flex-1 flex items-center justify-center gap-2">
                     <Save className="w-4 h-4" />
-                    {editingPerson ? 'Salvar Alterações' : 'Confirmar Cadastro'}
+                    {editingPerson ? 'Salvar Alterações' : 'Cadastrar'}
                   </button>
-                  <button type="button" onClick={resetForm} className="btn-secondary flex-1 py-3 text-base font-bold">
+                  <button type="button" onClick={resetForm} className="btn-secondary flex-1">
                     Cancelar
                   </button>
                 </div>
