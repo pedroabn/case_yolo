@@ -8,9 +8,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
 import { Person, PersonType, PERSON_TYPES } from './types';
 
-// URL base da API: aponta para o API Gateway da AWS Lambda.
-// Em produção, defina VITE_API_URL no .env com a URL do API Gateway.
-// Exemplo: VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev
+/**
+ * URL base da API: aponta para o API Gateway da AWS Lambda.
+ * Em produção, defina VITE_API_URL no .env com a URL do API Gateway.
+ * Exemplo: VITE_API_URL=https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/dev
+ */
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
@@ -48,6 +50,7 @@ export default function App() {
   /**
    * Busca pessoas diretamente da função AWS Lambda via API Gateway.
    * Os parâmetros `tipo` e `search` são passados como query strings.
+   * Rota: GET /people?tipo=Hóspede&search=termo
    */
   const fetchPeople = async () => {
     try {
@@ -57,12 +60,12 @@ export default function App() {
       if (searchTerm) params.search = searchTerm;
 
       const response = await axios.get(`${API_BASE_URL}/people`, { params });
-      // Garante que o dado recebido seja um array
+      // Garantir que o dado recebido seja um array
       const data = Array.isArray(response.data) ? response.data : [];
       setPeople(data);
     } catch (error) {
       showNotification('Erro ao carregar pessoas', 'error');
-      setPeople([]);
+      setPeople([]); // Garante que people continue sendo um array em caso de erro
     } finally {
       setLoading(false);
     }
@@ -75,7 +78,8 @@ export default function App() {
 
   /**
    * Salva (cria ou atualiza) uma pessoa via AWS Lambda.
-   * POST /people para criação, PUT /people/{id} para atualização.
+   * POST /people para criação
+   * PUT /people/{id} para atualização
    */
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
