@@ -1,0 +1,5 @@
+{
+  "name": "Yolo Coliving - Cadastro de Pessoas",
+  "description": "Sistema de gestão de pessoas para o ecossistema Yolo Coliving, com integração AWS Serverless e CRUD completo.",
+  "requestFramePermissions": []
+}
