@@ -261,13 +261,9 @@ export default function App() {
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900">
+            <h1 className="text-3xl font-bold tracking-tight text-primary">
               Cadastro de Pessoas
             </h1>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-700 border border-violet-200">
-              <Zap className="w-3 h-3" />
-              EventBridge
-            </span>
           </div>
           <p className="text-zinc-500">Yolo Coliving — Serverless Event-Driven</p>
         </div>

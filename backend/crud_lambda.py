@@ -22,7 +22,7 @@ from botocore.exceptions import ClientError
 # Config
 # ---------------------------------------------------------------------------
 dynamodb = boto3.resource("dynamodb")
-TABLE_NAME = os.environ.get("TABLE_NAME", "YoloPeople")
+TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
 
 # Mapeamento detail-type → handler

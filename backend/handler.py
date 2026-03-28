@@ -1,5 +1,6 @@
 import json
 import boto3
+import os
 import uuid
 from decimal import Decimal
 
@@ -10,9 +11,9 @@ class DecimalEncoder(json.JSONEncoder):
             return float(obj)
         return super(DecimalEncoder, self).default(obj)
 
-dynamodb = boto3.resource('dynamodb')
-table_name = 'Pessoas' # Assuming the table name is Pessoas
-table = dynamodb.Table(table_name)
+dynamodb = boto3.resource("dynamodb")
+TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
+table = dynamodb.Table(TABLE_NAME)
 
 def lambda_handler(event, context):
     print(f"Event: {json.dumps(event)}")

@@ -12,5 +12,5 @@ COPY . .
 # Expor porta do Vite
 EXPOSE 5173
 
-# Rodar servidor de desenvolvimento
-CMD ["npm", "run", "dev", "--", "--host"]
+# ✅ CORRIGIR: Rodar Vite diretamente (sem concurrently)
+CMD ["npm", "run", "dev"]

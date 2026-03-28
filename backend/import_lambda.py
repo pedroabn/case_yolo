@@ -18,7 +18,7 @@ from boto3.dynamodb.conditions import Key
 # Config
 # ---------------------------------------------------------------------------
 dynamodb = boto3.resource("dynamodb")
-TABLE_NAME = os.environ.get("TABLE_NAME")
+TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
 
 YOLO_API = os.environ.get("AWS_API_URL")

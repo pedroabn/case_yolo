@@ -8,6 +8,7 @@ provider:
   environment:
     TABLE_NAME: case_yolo
     EVENT_BUS_NAME: ${self:service}-bus
+    AWS_API_URL: ${env:AWS_API_URL}
   iam:
     role:
       statements:
@@ -26,7 +27,6 @@ provider:
                 - "/"
                 - - Fn::GetAtt: [PeopleTable, Arn]
                   - "index/*"
-        # EventBridge — apenas publisher_lambda precisa publicar eventos
         - Effect: Allow
           Action:
             - events:PutEvents
@@ -37,12 +37,13 @@ functions:
   # GET /api/people e GET /api/people/{id}
   # Síncrono — não passa pelo EventBridge
   readerHandler:
-    handler: reader_lambda.lambda_handler
+    handler: backend.reader_lambda.lambda_handler
     description: "Leitura síncrona de pessoas no DynamoDB"
-    # Adicionando a pasta dep ao pacote desta função
     package:
       include:
         - backend/dep/**
+        - backend/reader_lambda.py
+        - backend/crud_lambda.py                    
     events:
       - http:
           path: api/people
@@ -55,12 +56,14 @@ functions:
 
   # POST / PUT / DELETE — publica evento no EventBridge e retorna 202
   publisherHandler:
-    handler: publisher_lambda.lambda_handler
+    handler: backend.publisher_lambda.lambda_handler  # ✅ CORRIGIDO: path completo
     description: "Publica eventos de CRUD no EventBridge"
-    # Adicionando a pasta dep ao pacote desta função
     package:
       include:
         - backend/dep/**
+        - backend/publisher_lambda.py                 
+        - backend/crud_lambda.py                      
+        - backend/import_lambda.py                    
     events:
       - http:
           path: api/people
@@ -81,12 +84,13 @@ functions:
 
   # Ativado pelo EventBridge — nunca chamado diretamente pelo API Gateway
   crudHandler:
-    handler: crud_lambda.lambda_handler
+    handler: backend.crud_lambda.lambda_handler
     description: "Executa operações CRUD no DynamoDB via eventos do EventBridge"
-    # Adicionando a pasta dep ao pacote desta função
     package:
       include:
         - backend/dep/**
+        - backend/crud_lambda.py  
+        - backend/import_lambda.py
     events:
       - eventBridge:
           eventBus: !Ref PeopleBus
