@@ -1,16 +1,17 @@
 {
-  "name": "react-example",
+  "name": "yolo-coliving",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "create-table": "tsx scripts/create-table.ts",
-    "create-table-py": "python3 scripts/create_table.py",
+    "dev": "concurrently -n \"flask,vite\" -c \"blue,green\" \"npm run dev:api\" \"npm run dev:ui\"",
+    "dev:api": "echo 'Servidor local removido, usando API Gateway diretamente'",
+    "dev:ui": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "install:py": "pip install -r backend/requirements.txt --break-system-packages",
+    "deploy": "pip install -r requirements.txt --target dep/ && serverless deploy"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1018.0",
@@ -37,7 +38,6 @@
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "typescript": "~5.8.2"
   }
 }

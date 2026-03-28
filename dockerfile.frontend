@@ -1,0 +1,16 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiar package files e instalar dependências
+COPY package*.json ./
+RUN npm install
+
+# Copiar código fonte
+COPY . .
+
+# Expor porta do Vite
+EXPOSE 5173
+
+# Rodar servidor de desenvolvimento
+CMD ["npm", "run", "dev", "--", "--host"]

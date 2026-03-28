@@ -1,65 +1,99 @@
+"""
+import_lambda.py
+----------------
+Importa clientes da API externa para o DynamoDB.
+Ativado via EventBridge (detail-type: people.imported) pelo crud_lambda.
+"""
+
 import json
-import boto3
 import os
-import requests
 import uuid
 from datetime import datetime
 
-dynamodb = boto3.resource('dynamodb')
-TABLE_NAME = os.environ.get('TABLE_NAME')
+import boto3
+import requests
+from boto3.dynamodb.conditions import Key
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+dynamodb = boto3.resource("dynamodb")
+TABLE_NAME = os.environ.get("TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
-EXTERNAL_API_URL = "https://3ji5haxzr9.execute-api.us-east-1.amazonaws.com/dev/caseYolo"
+
+YOLO_API = os.environ.get("AWS_API_URL")
+
+# ---------------------------------------------------------------------------
+# Handler
+# ---------------------------------------------------------------------------
 
 def lambda_handler(event, context):
-    """
-    Lambda para importar dados da API externa para o DynamoDB.
-    Gera um ID único para cada usuário e garante e-mail único.
-    """
     try:
-        response = requests.get(EXTERNAL_API_URL)
+        response = requests.get(YOLO_API, timeout=15)
         response.raise_for_status()
-        
-        raw_data = response.json()
-        body_data = json.loads(raw_data.get('body', '{}'))
-        clientes = body_data.get('clientes', [])
-        
-        imported_count = 0
+
+        raw = response.json()
+        body_data = raw.get("body", "{}")
+        if isinstance(body_data, str):
+            body_data = json.loads(body_data)
+
+        clientes = body_data.get("clientes", [])
+        imported = 0
+        skipped = 0
+
         for c in clientes:
-            email = c.get('E-mail')
+            email = c.get("E-mail", "").strip()
             if not email:
+                skipped += 1
                 continue
-                
-            # Verifica se já existe pelo e-mail (único) usando o GSI EmailIndex
+
+            # Verifica duplicidade via GSI
             existing = table.query(
-                IndexName='EmailIndex',
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('email').eq(email)
+                IndexName="EmailIndex",
+                KeyConditionExpression=Key("email").eq(email),
             )
-            
-            if not existing.get('Items'):
-                item = {
-                    'id': str(uuid.uuid4()),
-                    'email': email,
-                    'nome': c.get('Nome'),
-                    'telefone': c.get('Telefone'),
-                    'tipo': c.get('Tipo'),
-                    'dataCadastro': c.get('Data de Cadastro', datetime.now().strftime('%Y-%m-%d')),
-                    'cep': '',
-                    'foto': ''
-                }
-                table.put_item(Item=item)
-                imported_count += 1
-                
+            if existing.get("Items"):
+                skipped += 1
+                continue
+
+            item = {
+                "id": str(uuid.uuid4()),
+                "email": email,
+                "nome": c.get("Nome", "").strip(),
+                "telefone": _normalize_phone(c.get("Telefone", "")),
+                "tipo": c.get("Tipo", "Hóspede"),
+                "dataCadastro": c.get(
+                    "Data de Cadastro", datetime.now().strftime("%Y-%m-%d")
+                ),
+                "cep": "",
+                "endereco": "",
+                "foto": "",
+            }
+            table.put_item(Item=item)
+            imported += 1
+
+        print(f"[import_lambda] importados={imported} ignorados={skipped}")
         return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Importação concluída. {imported_count} novos registros.',
-                'total_processado': len(clientes)
-            })
+            "statusCode": 200,
+            "body": json.dumps({
+                "message": f"Importação concluída: {imported} novos, {skipped} ignorados.",
+                "imported": imported,
+                "skipped": skipped,
+            }),
         }
-        
-    except Exception as e:
-        print(f"Erro na importação: {str(e)}")
+
+    except Exception as exc:
+        print(f"[ERROR import_lambda] {exc}")
         return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
+            "statusCode": 500,
+            "body": json.dumps({"error": str(exc)}),
         }
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _normalize_phone(phone: str) -> str:
+    digits = "".join(filter(str.isdigit, phone))
+    return digits[:11]

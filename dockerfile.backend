@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instalar Node.js e npm (necessário para Serverless Framework)
+RUN apt-get update && apt-get install -y \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Serverless Framework globalmente
+RUN npm install -g serverless
+
+# Copiar backend completo
+COPY backend/ ./backend/
+
+# Instalar dependências Python dentro de backend/dep/
+RUN pip install -r backend/requirements.txt -t backend/dep/
+
+# Copiar serverless.yml para deploy
+COPY serverless.yml ./

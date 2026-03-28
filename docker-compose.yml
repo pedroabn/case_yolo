@@ -1,0 +1,24 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: dockerfile.frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=${API_GATEWAY_URL}
+    env_file:
+      - .env
+
+  backend:
+    build:
+      context: .
+      dockerfile: dockerfile.backend
+    volumes:
+      - .:/app
+      - ~/.aws:/root/.aws:ro
+    env_file:
+      - .env
