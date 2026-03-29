@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
+
 print(f"[crud_lambda] TABLE_NAME={TABLE_NAME!r}")
 
 _ROUTES = {}
@@ -27,9 +28,10 @@ def _route(detail_type: str):
 def lambda_handler(event, context):
     detail_type = event.get("detail-type", "")
     detail = event.get("detail", {})
+    
     if isinstance(detail, str):
         detail = json.loads(detail)
-
+    
     print(f"[crud_lambda] event={detail_type} detail={json.dumps(detail, default=str)[:200]}")
 
     handler_fn = _ROUTES.get(detail_type)
@@ -60,7 +62,6 @@ def _update(data: dict):
     person_id = data.get("id")
     if not person_id:
         return _respond(400, {"message": "ID ausente"})
-    
     if "email" in data:
         existing = table.query(
             IndexName="EmailIndex",
@@ -102,9 +103,16 @@ def _import(data: dict):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     if current_dir not in sys.path:
         sys.path.insert(0, current_dir)
-    print(f"[INFO crud_lambda] Delegando para import_lambda")
     import_lambda = importlib.import_module("import_lambda")
-    return import_lambda.lambda_handler({}, {})
+    result = import_lambda.lambda_handler(
+        {
+            "source": "yolo.people",
+            "detail-type": "people.imported",
+            "detail": data or {},
+        },
+        {},
+    )
+    return result
 
 def _respond(status_code: int, body) -> dict:
     return {
@@ -113,5 +121,5 @@ def _respond(status_code: int, body) -> dict:
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
         },
-        "body": json.dumps(body, default=str) if body is not None else "",
+        "body": json.dumps(body, default=str) if body is not None else ""
     }

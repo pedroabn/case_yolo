@@ -20,7 +20,7 @@ services:
       dockerfile: dockerfile.backend
     volumes:
       - ~/.aws:/root/.aws:ro
-      - ./serverless.yml:/app/serverless.yml:ro
+      - ./serverless.yml:/app/serverless.yml
       - ./backend:/app/backend:ro
     env_file:
       - .env

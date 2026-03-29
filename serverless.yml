@@ -6,8 +6,8 @@ package:
     - "!node_modules/"
     - "!src/"
     - "!.env*"
-    - "!.md"
-    - "!dockerfile"
+    - "!*.md"
+    - "!dockerfile*"
     - "!docker-compose*"
     - "!package*.json"
     - "!tsconfig*"
@@ -18,24 +18,14 @@ package:
     - "!__pycache__/"
     - "!*.pyc"
     - "!lambda_function.py"
+    - "!handler.py"
 
 provider:
   name: aws
   runtime: python3.11
   region: us-east-2
-  cors:
-    origin: '*'
-    headers:
-      - Content-Type
-      - Authorization
-      - X-Requested-With
-      - X-Amz-Date
-      - X-Amz-Security-Token
-      - X-Api-Key
-    allowCredentials: false
-    maxAge: 86400
   environment:
-    DYNAMODB_TABLE_NAME: case_yolo
+    DYNAMODB_TABLE_NAME: ${env:DYNAMODB_TABLE_NAME}
     EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
     API_YOLO: ${env:API_YOLO}
     LOCAL_SYNC: ${env:LOCAL_SYNC}
@@ -87,7 +77,7 @@ functions:
           path: api/people
           method: get
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
@@ -101,10 +91,15 @@ functions:
           path: api/people/{id}
           method: get
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
+              - X-Requested-With
+              - X-Amz-Date
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
 
   publisherHandler:
     handler: backend/publisher_lambda.lambda_handler
@@ -123,37 +118,57 @@ functions:
           path: api/people
           method: post
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
+              - X-Requested-With
+              - X-Amz-Date
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
 
       - http:
           path: api/people/{id}
           method: put
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
+              - X-Requested-With
+              - X-Amz-Date
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
 
       - http:
           path: api/people/{id}
           method: delete
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
+              - X-Requested-With
+              - X-Amz-Date
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
 
       - http:
           path: api/import
           method: post
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
+              - X-Requested-With
+              - X-Amz-Date
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
 
   crudHandler:
     handler: backend/crud_lambda.lambda_handler
@@ -193,10 +208,11 @@ functions:
           path: api/health
           method: get
           cors:
-            origin: "*"
+            origin: '*'
             headers:
               - Content-Type
               - Authorization
+            allowCredentials: false
 
 resources:
 
@@ -211,61 +227,50 @@ resources:
     PeopleTable:
       Type: AWS::DynamoDB::Table
       Properties:
-
         TableName: ${self:provider.environment.DYNAMODB_TABLE_NAME}
-
         BillingMode: PAY_PER_REQUEST
-
         AttributeDefinitions:
-
           - AttributeName: id
             AttributeType: S
-
           - AttributeName: email
             AttributeType: S
-
           - AttributeName: tipo
             AttributeType: S
-
         KeySchema:
-
           - AttributeName: id
             KeyType: HASH
-
         GlobalSecondaryIndexes:
-
           - IndexName: EmailIndex
             KeySchema:
               - AttributeName: email
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
-
           - IndexName: TipoIndex
             KeySchema:
               - AttributeName: tipo
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
-
       DeletionPolicy: Retain
 
   Outputs:
 
     ApiGatewayUrl:
-      Description: URL base do API Gateway
+      Description: URL base do API Gateway (inclui stage)
       Value:
         Fn::Join:
           - ""
           - - "https://"
             - Ref: ApiGatewayRestApi
             - ".execute-api."
-            - ${self:provider.region}
+            - Ref: AWS::Region
             - ".amazonaws.com/"
+            - !Sub "${sls:stage}"
 
     DynamoTableName:
       Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}
 
     EventBusArn:
       Value:
-        Fn::Sub: arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}
+        Fn::Sub: "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}"

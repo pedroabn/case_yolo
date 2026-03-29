@@ -23,6 +23,11 @@ def lambda_handler(event, context):
     Usa 'id' (UUID ou numérico) como chave primária.
     """
     http_method = event.get('httpMethod')
+    
+    # ✅ Handler para preflight CORS
+    if http_method == 'OPTIONS':
+        return respond(204, "")
+    
     path_params = event.get('pathParameters') or {}
     query_params = event.get('queryStringParameters') or {}
     
@@ -64,11 +69,11 @@ def list_people(params):
     else:
         response = table.scan()
         items = response.get('Items', [])
-        
+    
     if search_term:
         search_lower = search_term.lower()
         items = [item for item in items if search_lower in item.get('nome', '').lower() or search_lower in item.get('email', '').lower()]
-        
+    
     return respond(200, items)
 
 def get_person(person_id):
@@ -89,12 +94,12 @@ def create_person(data):
     )
     if existing.get('Items'):
         return respond(400, {'message': 'E-mail já cadastrado para outro usuário'})
-        
+    
     data['id'] = data.get('id', str(uuid.uuid4()))
     data['dataCadastro'] = datetime.now().strftime('%Y-%m-%d')
     if 'telefone' in data:
         data['telefone'] = normalize_phone(data['telefone'])
-        
+    
     table.put_item(Item=data)
     return respond(201, data)
 
@@ -111,26 +116,26 @@ def update_person(person_id, data):
         for item in existing.get('Items', []):
             if item['id'] != person_id:
                 return respond(400, {'message': 'Este e-mail já está em uso por outro usuário'})
-                
+    
     if 'telefone' in data:
         data['telefone'] = normalize_phone(data['telefone'])
-        
+    
     # Constrói expressão de update dinamicamente
-    update_expr = "set "
+    update_expr = "SET "
     attr_values = {}
     attr_names = {}
-    
+
     for key, value in data.items():
         if key not in ['id', 'dataCadastro']:
             update_expr += f"#{key} = :{key}, "
             attr_values[f":{key}"] = value
             attr_names[f"#{key}"] = key
-    
+
     if not attr_values:
         return respond(200, {'message': 'Nada para atualizar'})
-        
-    update_expr = update_expr.rstrip(", ")
     
+    update_expr = update_expr.rstrip(", ")
+
     try:
         response = table.update_item(
             Key={'id': person_id},

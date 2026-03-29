@@ -1,15 +1,19 @@
-FROM python:3.11-slim
+FROM node:20-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
-    nodejs \
-    npm \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
 RUN npm install -g serverless
 
 COPY backend/requirements.txt ./backend/requirements.txt
-RUN pip install -r backend/requirements.txt -t backend/dep/
+
+# --break-system-packages necessário em Python 3.11+ em distros Debian-based
+RUN pip3 install -r backend/requirements.txt -t backend/dep/ --break-system-packages
 
 CMD ["serverless", "deploy"]

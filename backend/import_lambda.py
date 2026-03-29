@@ -1,6 +1,5 @@
 """
 import_lambda.py
-----------------
 Importa clientes da API Yolo para o DynamoDB.
 Chamado por: reader_lambda (auto-import) e crud_lambda (evento people.imported).
 """
@@ -9,7 +8,6 @@ import os
 import sys
 import uuid
 from datetime import datetime
-
 import boto3
 import urllib3
 from boto3.dynamodb.conditions import Key
@@ -20,17 +18,14 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 http = urllib3.PoolManager()
-
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
-
 YOLO_API = os.environ.get("API_YOLO", "").strip()
-
 
 def lambda_handler(event, context):
     print(f"[import_lambda] TABLE={TABLE_NAME!r} API={YOLO_API!r}")
-
+    
     if not YOLO_API:
         msg = "API_YOLO não configurada."
         print(f"[ERROR import_lambda] {msg}")
@@ -105,11 +100,9 @@ def lambda_handler(event, context):
         print(f"[ERROR import_lambda] {msg}")
         return _respond(502, {"error": msg})
 
-
 def _extract_clientes(raw):
     if isinstance(raw, list):
         return raw
-
     if not isinstance(raw, dict):
         return []
 
@@ -142,15 +135,12 @@ def _extract_clientes(raw):
 
     return []
 
-
 def _normalize_phone(phone):
     return "".join(filter(str.isdigit, str(phone)))[:11]
-
 
 def _normalize_tipo(tipo):
     validos = {"Hóspede", "Proprietário", "Operador", "Fornecedor"}
     return tipo.strip() if tipo.strip() in validos else "Hóspede"
-
 
 def _normalize_date(date_str):
     if not date_str:
@@ -162,13 +152,14 @@ def _normalize_date(date_str):
             continue
     return datetime.now().strftime("%Y-%m-%d")
 
-
 def _respond(status_code, body):
     return {
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization",
         },
-        "body": json.dumps(body, default=str) if body is not None else "",
+        "body": json.dumps(body, default=str) if body is not None else ""
     }
