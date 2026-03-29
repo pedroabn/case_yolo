@@ -13,24 +13,36 @@ services:
       - VITE_API_URL=${VITE_API_URL}
     env_file:
       - .env
+
   backend:
     build:
       context: .
       dockerfile: dockerfile.backend
     volumes:
       - ~/.aws:/root/.aws:ro
+      - ./serverless.yml:/app/serverless.yml:ro
+      - ./backend:/app/backend:ro
     env_file:
       - .env
     environment:
       - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
       - EVENT_BUS_NAME=${EVENT_BUS_NAME}
       - API_YOLO=${API_YOLO}
-      - AWS_REGION=${AWS_REGION}
     profiles:
       - deploy
     networks:
       - yolo-network
+  
+  frontend-deploy:
+    image: amazon/aws-cli
+    volumes:
+      - ./dist:/dist
+      - ~/.aws:/root/.aws:ro
+    command: >
+      s3 sync /dist s3://yolo-coliving-frontend --delete
+    profiles:
+      - deploy
 
-networks:                           # REDE COMPARTILHADA
+networks:
   yolo-network:
     driver: bridge

@@ -1,17 +1,11 @@
 """
 reader_lambda.py
-----------------
 Leitura síncrona do DynamoDB via GET requests.
-Se a tabela estiver vazia, dispara a importação automaticamente
-antes de retornar os dados — garantindo que o primeiro GET sempre
-entregue dados ao frontend.
+Se a tabela estiver vazia, dispara a importação e aguarda antes de retornar.
 """
-
-import importlib
 import json
 import os
 import sys
-
 import boto3
 from boto3.dynamodb.conditions import Key
 
@@ -19,11 +13,17 @@ dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
 
+# Garante que o diretório do próprio arquivo esteja no sys.path para que
+# importlib.import_module("import_lambda") funcione independente de como
+# o Lambda loader inicializa o path (handler com prefixo "backend/").
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
+
 
 def lambda_handler(event, context):
     path_params = event.get("pathParameters") or {}
     query_params = event.get("queryStringParameters") or {}
-
     try:
         if path_params.get("id"):
             return _get_one(path_params["id"])
@@ -47,15 +47,15 @@ def _list(params: dict):
 
     items = result.get("Items", [])
 
-    # Auto-import: se a tabela estiver vazia, importa da API Yolo
-    # e refaz a leitura antes de responder ao frontend.
+    # Auto-import: só dispara quando não há filtro ativo e a tabela está vazia.
+    # A importação é síncrona — os dados ficam disponíveis antes de retornar.
     if not items and not search and not filter_type:
         print("[reader_lambda] Tabela vazia — disparando importação automática")
-        _trigger_import()
-
-        # Relê após importar
-        result = table.scan()
-        items = result.get("Items", [])
+        imported = _trigger_import()
+        if imported > 0:
+            # Re-scan após importação bem-sucedida
+            result = table.scan()
+            items = result.get("Items", [])
 
     if search:
         items = [
@@ -76,18 +76,25 @@ def _get_one(person_id: str):
     return _respond(200, item)
 
 
-def _trigger_import():
-    """Chama import_lambda diretamente (síncrono) para popular a tabela."""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.insert(0, current_dir)
-
+def _trigger_import() -> int:
+    """
+    Chama import_lambda.lambda_handler de forma síncrona.
+    Retorna o número de registros importados (0 em caso de erro).
+    O módulo é importado com importlib para evitar erros de import no cold start
+    quando o arquivo ainda não está no sys.path padrão do Lambda loader.
+    """
     try:
+        import importlib
         import_lambda = importlib.import_module("import_lambda")
         result = import_lambda.lambda_handler({}, {})
-        print(f"[reader_lambda] Importação automática: {result.get('body', '')[:200]}")
+        body_raw = result.get("body", "{}")
+        body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
+        imported = body.get("imported", 0)
+        print(f"[reader_lambda] Importação automática concluída: {body}")
+        return imported
     except Exception as exc:
         print(f"[ERROR reader_lambda] Falha na importação automática: {exc}")
+        return 0
 
 
 def _respond(status_code: int, body) -> dict:

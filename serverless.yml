@@ -1,29 +1,32 @@
-# serverless.yml
 service: yolo-coliving-api
-
 package:
   individually: true
   patterns:
-    - "!node_modules/**"
-    - "!src/**"
+    - "!node_modules/"
+    - "!src/"
     - "!.env*"
-    - "!*.md"
-    - "!dockerfile*"
+    - "!.md"
+    - "!dockerfile"
     - "!docker-compose*"
     - "!package*.json"
     - "!tsconfig*"
     - "!vite.config*"
     - "!index.html"
     - "!app.py"
-
+    - "!requirements.txt"
+    - "!__pycache__/"
+    - "!*.pyc"
+    - "!lambda_function.py"
 provider:
   name: aws
   runtime: python3.11
   region: us-east-2
+  timeout: 28
   environment:
     DYNAMODB_TABLE_NAME: case_yolo
-    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
-    API_YOLO: ${env:API_YOLO}
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME, 'yolo-api-bus'}
+    API_YOLO: ${env:API_YOLO, 'https://3ji5haxzr9.execute-api.us-east-1.amazonaws.com/dev/caseYolo'}
+    LOCAL_SYNC: ${env:LOCAL_SYNC, 'false'}
   iam:
     role:
       statements:
@@ -36,28 +39,24 @@ provider:
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
           Resource:
-            - Fn::GetAtt: [PeopleTable, Arn]
-            - Fn::Join:
-                - "/"
-                - - Fn::GetAtt: [PeopleTable, Arn]
-                  - "index/*"
+            - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/case_yolo"
+            - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/case_yolo/index/*"
         - Effect: Allow
           Action:
             - events:PutEvents
           Resource:
-            - Fn::GetAtt: [PeopleBus, Arn]
+            - Fn::Sub: "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}"
         - Effect: Allow
           Action:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
           Resource: "*"
-
 functions:
-  # GET — leitura síncrona, com auto-import se tabela vazia
   readerHandler:
     handler: backend/reader_lambda.lambda_handler
-    timeout: 30
+    timeout: 28
+    memorySize: 256
     package:
       patterns:
         - "backend/__init__.py"
@@ -72,14 +71,16 @@ functions:
           path: api/people/{id}
           method: get
           cors: true
-
-  # POST / PUT / DELETE — publica evento no EventBridge, retorna 202
   publisherHandler:
     handler: backend/publisher_lambda.lambda_handler
+    timeout: 28
+    memorySize: 256
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/publisher_lambda.py"
+        - "backend/crud_lambda.py"
+        - "backend/import_lambda.py"
     events:
       - http:
           path: api/people
@@ -97,11 +98,10 @@ functions:
           path: api/import
           method: post
           cors: true
-
-  # Ativado pelo EventBridge — nunca chamado direto pelo API Gateway
   crudHandler:
     handler: backend/crud_lambda.lambda_handler
-    timeout: 30
+    timeout: 28
+    memorySize: 512
     package:
       patterns:
         - "backend/__init__.py"
@@ -118,10 +118,10 @@ functions:
               - person.updated
               - person.deleted
               - people.imported
-
-  # Health check
   healthHandler:
     handler: backend/health_lambda.lambda_handler
+    timeout: 10
+    memorySize: 128
     package:
       patterns:
         - "backend/__init__.py"
@@ -131,14 +131,13 @@ functions:
           path: api/health
           method: get
           cors: true
-
 resources:
   Resources:
     PeopleBus:
       Type: AWS::Events::EventBus
       Properties:
         Name: ${self:provider.environment.EVENT_BUS_NAME}
-
+      DeletionPolicy: Retain
     PeopleTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -167,7 +166,7 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
-
+      DeletionPolicy: Retain
   Outputs:
     ApiGatewayUrl:
       Description: "URL base do API Gateway"
@@ -176,9 +175,9 @@ resources:
           - ""
           - - "https://"
             - Ref: ApiGatewayRestApi
-            - ".execute-api.${self:provider.region}.amazonaws.com/dev"
+            - ".execute-api.${self:provider.region}.amazonaws.com/"
     DynamoTableName:
       Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}
     EventBusArn:
       Value:
-        Fn::GetAtt: [PeopleBus, Arn]
+        Fn::Sub: "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}"

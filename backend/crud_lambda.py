@@ -1,15 +1,12 @@
 """
 crud_lambda.py
---------------
 Ativado exclusivamente pelo EventBridge.
 Nunca chamado diretamente pelo API Gateway.
 """
-
 import importlib
 import json
 import os
 import sys
-
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
@@ -17,11 +14,9 @@ from botocore.exceptions import ClientError
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
-
 print(f"[crud_lambda] TABLE_NAME={TABLE_NAME!r}")
 
 _ROUTES = {}
-
 
 def _route(detail_type: str):
     def decorator(fn):
@@ -29,11 +24,9 @@ def _route(detail_type: str):
         return fn
     return decorator
 
-
 def lambda_handler(event, context):
     detail_type = event.get("detail-type", "")
     detail = event.get("detail", {})
-
     if isinstance(detail, str):
         detail = json.loads(detail)
 
@@ -50,7 +43,6 @@ def lambda_handler(event, context):
         print(f"[ERROR crud_lambda] {detail_type}: {exc}")
         raise
 
-
 @_route("person.created")
 def _create(data: dict):
     existing = table.query(
@@ -59,18 +51,16 @@ def _create(data: dict):
     )
     if [i for i in existing.get("Items", []) if i["id"] != data.get("id")]:
         return _respond(409, {"message": "E-mail já cadastrado"})
-
     table.put_item(Item=data)
     print(f"[INFO crud_lambda] Criado: {data['id']}")
     return _respond(201, data)
-
 
 @_route("person.updated")
 def _update(data: dict):
     person_id = data.get("id")
     if not person_id:
         return _respond(400, {"message": "ID ausente"})
-
+    
     if "email" in data:
         existing = table.query(
             IndexName="EmailIndex",
@@ -98,28 +88,23 @@ def _update(data: dict):
     except ClientError as exc:
         raise RuntimeError(exc.response["Error"]["Message"]) from exc
 
-
 @_route("person.deleted")
 def _delete(data: dict):
     person_id = data.get("id")
     if not person_id:
         return _respond(400, {"message": "ID ausente"})
-
     table.delete_item(Key={"id": person_id})
     print(f"[INFO crud_lambda] Excluído: {person_id}")
     return _respond(204, None)
-
 
 @_route("people.imported")
 def _import(data: dict):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     if current_dir not in sys.path:
         sys.path.insert(0, current_dir)
-
     print(f"[INFO crud_lambda] Delegando para import_lambda")
     import_lambda = importlib.import_module("import_lambda")
     return import_lambda.lambda_handler({}, {})
-
 
 def _respond(status_code: int, body) -> dict:
     return {
