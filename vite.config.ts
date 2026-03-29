@@ -1,45 +1,22 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, ".", "");
-  
-  return {
-    plugins: [
-      react(),
-      tailwindcss(),
-    ],
-    resolve: {
-      alias: {
-        "@": path.resolve(__dirname, "."),
-      },
+// Sem proxy — o frontend fala diretamente com o API Gateway da AWS.
+// VITE_API_URL no .env aponta para: https://xxx.execute-api.us-east-2.amazonaws.com/dev/api
+// App.tsx usa: ${VITE_API_URL}/people, ${VITE_API_URL}/import etc.
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "."),
     },
-    server: {
-      // Habilita Hot Module Replacement (HMR)
-      hmr: process.env.DISABLE_HMR !== "true",
-      // Permite acesso externo ao container
-      host: "0.0.0.0",
-      port: 5173,
-      // Proxy para chamadas API durante o desenvolvimento local
-      proxy: {
-        "/api": {
-          // Dev local: backend:8000 (serverless-offline)
-          // Prod: VITE_API_URL (AWS API Gateway)
-          target: env.VITE_API_URL || "http://backend:8000",
-          changeOrigin: true,
-          secure: false,
-          rewrite: (path) => path.replace(/^\/api/, ""),
-        },
-        "/import": {
-          target: env.VITE_API_URL || "http://localhost:8000",
-          changeOrigin: true,
-          secure: false,
-          // ✅ CORRETO: barra escapada no regex
-          rewrite: (path) => path.replace(/^\/import/, "/api/import"),
-        },
-      },
-    },
-  };
+  },
+  server: {
+    hmr: process.env.DISABLE_HMR !== "true",
+    host: "0.0.0.0",
+    port: 5173,
+  },
 });

@@ -8,20 +8,17 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
 import { Person, PersonType, PERSON_TYPES } from './types';
-
-// Em produção: VITE_API_URL aponta para o API Gateway
-// Em dev local: vazio → Vite proxy redireciona /api para Flask :8000
-const API_BASE_URL = import.meta.env.VITE_API_URL || '';
-
+ 
+// VITE_API_URL já inclui /api no final:
+// ex: https://xxx.execute-api.us-east-2.amazonaws.com/dev/api
+// Logo as rotas são: ${API_BASE}/people, ${API_BASE}/import etc.
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+ 
 type NotificationType = 'success' | 'error' | 'processing';
-
-interface Notification {
-  message: string;
-  type: NotificationType;
-}
-
-const REFETCH_DELAY_MS = 1500; // delay após 202 para re-fetch confirmar operação
-
+interface Notification { message: string; type: NotificationType; }
+ 
+const REFETCH_DELAY_MS = 2000;
+ 
 export default function App() {
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,17 +30,13 @@ export default function App() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-
-  const [formData, setFormData] = useState({
-    nome: '',
-    telefone: '',
-    email: '',
-    tipo: 'Hóspede' as PersonType,
-    avatarUrl: '',
-    cep: '',
-    endereco: '',
-  });
   const [isFetchingCep, setIsFetchingCep] = useState(false);
+ 
+  const [formData, setFormData] = useState({
+    nome: '', telefone: '', email: '',
+    tipo: 'Hóspede' as PersonType,
+    avatarUrl: '', cep: '', endereco: '',
+  });
 
   // ------------------------------------------------------------------
   // Fetch
@@ -55,8 +48,9 @@ export default function App() {
       const params = new URLSearchParams();
       if (filter && filter !== 'Todos') params.set('tipo', filter);
       if (searchTerm) params.set('search', searchTerm);
-
-      const response = await axios.get(`${API_BASE_URL}/api/people?${params}`);
+ 
+      // GET /people — reader_lambda auto-importa se tabela vazia
+      const response = await axios.get(`${API_BASE}/people?${params}`);
       setPeople(Array.isArray(response.data) ? response.data : []);
     } catch {
       showNotification('Erro ao carregar pessoas', 'error');
@@ -65,7 +59,7 @@ export default function App() {
       setLoading(false);
     }
   }, [filter, searchTerm]);
-
+ 
   useEffect(() => {
     const timer = setTimeout(fetchPeople, 300);
     return () => clearTimeout(timer);
@@ -106,11 +100,11 @@ export default function App() {
       let response;
       if (editingPerson) {
         response = await axios.put(
-          `${API_BASE_URL}/api/people/${editingPerson.id}`,
+          `${API_BASE}/api/people/${editingPerson.id}`,
           formData
         );
       } else {
-        response = await axios.post(`${API_BASE_URL}/api/people`, formData);
+        response = await axios.post(`${API_BASE}/api/people`, formData);
       }
 
       resetForm();
@@ -150,7 +144,7 @@ export default function App() {
     setIsSaving(true);
     try {
       const response = await axios.delete(
-        `${API_BASE_URL}/api/people/${deleteId}`
+        `${API_BASE}/api/people/${deleteId}`
       );
 
       if (response.status === 202) {
@@ -177,7 +171,7 @@ export default function App() {
   const handleImport = async () => {
     setIsSaving(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/import`);
+      const response = await axios.post(`${API_BASE}/api/import`);
       if (response.status === 202) {
         handleAsyncResponse('Importação concluída!');
       } else {

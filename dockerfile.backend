@@ -19,3 +19,6 @@ RUN pip install -r backend/requirements.txt -t backend/dep/
 
 # Copiar serverless.yml para deploy
 COPY serverless.yml ./
+
+# Container existe somente para executar: serverless deploy
+CMD ["serverless", "deploy"]

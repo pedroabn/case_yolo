@@ -1,6 +1,21 @@
 # serverless.yml
 service: yolo-coliving-api
 
+package:
+  individually: true
+  patterns:
+    - "!node_modules/**"
+    - "!src/**"
+    - "!.env*"
+    - "!*.md"
+    - "!dockerfile*"
+    - "!docker-compose*"
+    - "!package*.json"
+    - "!tsconfig*"
+    - "!vite.config*"
+    - "!index.html"
+    - "!app.py"
+
 provider:
   name: aws
   runtime: python3.11
@@ -39,15 +54,15 @@ provider:
           Resource: "*"
 
 functions:
+  # GET — leitura síncrona, com auto-import se tabela vazia
   readerHandler:
-    handler: backend.reader_lambda.lambda_handler
-    description: "Leitura síncrona de pessoas no DynamoDB"
+    handler: backend/reader_lambda.lambda_handler
+    timeout: 30
     package:
-      include:
-        - backend/__init__.py
-        - backend/dep/**
-        - backend/reader_lambda.py
-        - backend/crud_lambda.py
+      patterns:
+        - "backend/__init__.py"
+        - "backend/reader_lambda.py"
+        - "backend/import_lambda.py"
     events:
       - http:
           path: api/people
@@ -58,16 +73,13 @@ functions:
           method: get
           cors: true
 
+  # POST / PUT / DELETE — publica evento no EventBridge, retorna 202
   publisherHandler:
-    handler: backend.publisher_lambda.lambda_handler
-    description: "Publica eventos de CRUD no EventBridge"
+    handler: backend/publisher_lambda.lambda_handler
     package:
-      include:
-        - backend/__init__.py
-        - backend/dep/**
-        - backend/publisher_lambda.py
-        - backend/crud_lambda.py
-        - backend/import_lambda.py
+      patterns:
+        - "backend/__init__.py"
+        - "backend/publisher_lambda.py"
     events:
       - http:
           path: api/people
@@ -86,15 +98,15 @@ functions:
           method: post
           cors: true
 
+  # Ativado pelo EventBridge — nunca chamado direto pelo API Gateway
   crudHandler:
-    handler: backend.crud_lambda.lambda_handler
-    description: "Executa operações CRUD no DynamoDB via eventos do EventBridge"
+    handler: backend/crud_lambda.lambda_handler
+    timeout: 30
     package:
-      include:
-        - backend/__init__.py
-        - backend/dep/**
-        - backend/crud_lambda.py
-        - backend/import_lambda.py
+      patterns:
+        - "backend/__init__.py"
+        - "backend/crud_lambda.py"
+        - "backend/import_lambda.py"
     events:
       - eventBridge:
           eventBus: !Ref PeopleBus
@@ -106,14 +118,14 @@ functions:
               - person.updated
               - person.deleted
               - people.imported
-  
+
+  # Health check
   healthHandler:
-    handler: backend.health_lambda.lambda_handler
+    handler: backend/health_lambda.lambda_handler
     package:
-      include:
-        - backend/__init__.py
-        - backend/dep/**
-        - backend/health_lambda.py
+      patterns:
+        - "backend/__init__.py"
+        - "backend/health_lambda.py"
     events:
       - http:
           path: api/health
@@ -165,10 +177,8 @@ resources:
           - - "https://"
             - Ref: ApiGatewayRestApi
             - ".execute-api.${self:provider.region}.amazonaws.com/dev"
+    DynamoTableName:
+      Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}
     EventBusArn:
-      Description: "ARN do EventBridge Bus"
       Value:
         Fn::GetAtt: [PeopleBus, Arn]
-    DynamoTableName:
-      Description: "Nome da tabela DynamoDB"
-      Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}
