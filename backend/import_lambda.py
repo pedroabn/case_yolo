@@ -1,40 +1,41 @@
 """
 import_lambda.py
-----------------
 Importa clientes da API Yolo para o DynamoDB.
 Chamado por: crud_lambda (via EventBridge) e reader_lambda (auto-import).
 """
-
 import json
 import os
 import uuid
 from datetime import datetime
-
 import boto3
-import requests
+import urllib3
 from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
-
 YOLO_API = os.environ.get("API_YOLO", "").strip()
 
+# ✅ HTTP Client nativo (sem dependências externas)
+http = urllib3.PoolManager()
 
 def lambda_handler(event, context):
     print(f"[import_lambda] TABLE={TABLE_NAME!r} API={YOLO_API!r}")
-
+    
     if not YOLO_API:
         msg = "API_YOLO não configurada."
         print(f"[ERROR import_lambda] {msg}")
         return _respond(500, {"error": msg})
 
     try:
-        response = requests.get(YOLO_API, timeout=15)
-        print(f"[import_lambda] HTTP {response.status_code}")
-        response.raise_for_status()
+        response = http.request("GET", YOLO_API, timeout=15.0)
+        print(f"[import_lambda] HTTP {response.status}")
+        
+        if response.status >= 400:
+            raise Exception(f"HTTP {response.status}")
 
-        raw = response.json()
+        # ✅ Substitui response.json() por json.loads()
+        raw = json.loads(response.data.decode("utf-8"))
         print(f"[import_lambda] Raw (300 chars): {str(raw)[:300]}")
 
         clientes = _extract_clientes(raw)
@@ -56,6 +57,7 @@ def lambda_handler(event, context):
                 skipped += 1
                 continue
 
+            # ✅ Remove espaços das strings
             existing = table.query(
                 IndexName="EmailIndex",
                 KeyConditionExpression=Key("email").eq(email),
@@ -82,7 +84,7 @@ def lambda_handler(event, context):
         print(f"[import_lambda] {msg}")
         return _respond(200, {"message": msg, "imported": imported, "skipped": skipped})
 
-    except requests.exceptions.RequestException as exc:
+    except urllib3.exceptions.HTTPError as exc:
         msg = f"Erro HTTP: {exc}"
         print(f"[ERROR import_lambda] {msg}")
         return _respond(502, {"error": msg})
@@ -95,7 +97,6 @@ def lambda_handler(event, context):
 def _extract_clientes(raw) -> list:
     if isinstance(raw, list):
         return raw
-
     if not isinstance(raw, dict):
         return []
 
@@ -109,7 +110,7 @@ def _extract_clientes(raw) -> list:
                 return json.loads(value)
             except Exception:
                 pass
-
+ 
     # Envelope Lambda: {"body": "..."}
     body = raw.get("body")
     if body is None:

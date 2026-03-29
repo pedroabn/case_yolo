@@ -1,8 +1,14 @@
-# backend/health_lambda.py
+"""
+backend/health_lambda.py
+Health check dos serviços AWS e API externa.
+"""
 import boto3
 import os
-import requests
+import urllib3
 import json
+
+# ✅ HTTP Client nativo (sem dependências externas)
+http = urllib3.PoolManager()
 
 def lambda_handler(event, context):
     checks = {}
@@ -15,14 +21,14 @@ def lambda_handler(event, context):
         checks["dynamodb"] = "OK"
     except Exception as e:
         checks["dynamodb"] = f"FAIL: {str(e)}"
-    
-    # ✅ Check API Externa
+
+    # ✅ Check API Externa (substitui requests.get)
     try:
-        response = requests.get(os.environ.get("API_YOLO"), timeout=5)
-        checks["external_api"] = f"OK ({response.status_code})"
+        response = http.request("GET", os.environ.get("API_YOLO"), timeout=5.0)
+        checks["external_api"] = f"OK ({response.status})"
     except Exception as e:
         checks["external_api"] = f"FAIL: {str(e)}"
-    
+
     # ✅ Check EventBridge
     try:
         events = boto3.client("events")
@@ -30,7 +36,7 @@ def lambda_handler(event, context):
         checks["eventbridge"] = "OK"
     except Exception as e:
         checks["eventbridge"] = f"FAIL: {str(e)}"
-    
+
     return {
         "statusCode": 200,
         "body": json.dumps(checks),

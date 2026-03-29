@@ -100,11 +100,11 @@ export default function App() {
       let response;
       if (editingPerson) {
         response = await axios.put(
-          `${API_BASE}/api/people/${editingPerson.id}`,
+          `${API_BASE}/people/${editingPerson.id}`,
           formData
         );
       } else {
-        response = await axios.post(`${API_BASE}/api/people`, formData);
+        response = await axios.post(`${API_BASE}/people`, formData);
       }
 
       resetForm();
@@ -144,7 +144,7 @@ export default function App() {
     setIsSaving(true);
     try {
       const response = await axios.delete(
-        `${API_BASE}/api/people/${deleteId}`
+        `${API_BASE}/people/${deleteId}`
       );
 
       if (response.status === 202) {
@@ -171,7 +171,7 @@ export default function App() {
   const handleImport = async () => {
     setIsSaving(true);
     try {
-      const response = await axios.post(`${API_BASE}/api/import`);
+      const response = await axios.post(`${API_BASE}/import`);
       if (response.status === 202) {
         handleAsyncResponse('Importação concluída!');
       } else {
