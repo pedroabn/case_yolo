@@ -25,10 +25,11 @@ export default defineConfig(({ mode }) => {
       // Proxy para chamadas API durante o desenvolvimento local
       proxy: {
         "/api": {
-          target: env.VITE_API_URL || "http://localhost:8000",
+          // Dev local: backend:8000 (serverless-offline)
+          // Prod: VITE_API_URL (AWS API Gateway)
+          target: env.VITE_API_URL || "http://backend:8000",
           changeOrigin: true,
           secure: false,
-          // ✅ CORRETO: barra escapada no regex
           rewrite: (path) => path.replace(/^\/api/, ""),
         },
         "/import": {

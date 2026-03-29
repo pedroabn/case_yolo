@@ -6,13 +6,12 @@ provider:
   runtime: python3.11
   region: us-east-2
   environment:
-    TABLE_NAME: case_yolo
-    EVENT_BUS_NAME: ${self:service}-bus
-    AWS_API_URL: ${env:AWS_API_URL}
+    DYNAMODB_TABLE_NAME: case_yolo
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+    API_YOLO: ${env:API_YOLO}
   iam:
     role:
       statements:
-        # DynamoDB — todos os Lambdas precisam
         - Effect: Allow
           Action:
             - dynamodb:Query
@@ -32,18 +31,23 @@ provider:
             - events:PutEvents
           Resource:
             - Fn::GetAtt: [PeopleBus, Arn]
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
 
 functions:
-  # GET /api/people e GET /api/people/{id}
-  # Síncrono — não passa pelo EventBridge
   readerHandler:
     handler: backend.reader_lambda.lambda_handler
     description: "Leitura síncrona de pessoas no DynamoDB"
     package:
       include:
+        - backend/__init__.py
         - backend/dep/**
         - backend/reader_lambda.py
-        - backend/crud_lambda.py                    
+        - backend/crud_lambda.py
     events:
       - http:
           path: api/people
@@ -54,16 +58,16 @@ functions:
           method: get
           cors: true
 
-  # POST / PUT / DELETE — publica evento no EventBridge e retorna 202
   publisherHandler:
-    handler: backend.publisher_lambda.lambda_handler  # ✅ CORRIGIDO: path completo
+    handler: backend.publisher_lambda.lambda_handler
     description: "Publica eventos de CRUD no EventBridge"
     package:
       include:
+        - backend/__init__.py
         - backend/dep/**
-        - backend/publisher_lambda.py                 
-        - backend/crud_lambda.py                      
-        - backend/import_lambda.py                    
+        - backend/publisher_lambda.py
+        - backend/crud_lambda.py
+        - backend/import_lambda.py
     events:
       - http:
           path: api/people
@@ -82,14 +86,14 @@ functions:
           method: post
           cors: true
 
-  # Ativado pelo EventBridge — nunca chamado diretamente pelo API Gateway
   crudHandler:
     handler: backend.crud_lambda.lambda_handler
     description: "Executa operações CRUD no DynamoDB via eventos do EventBridge"
     package:
       include:
+        - backend/__init__.py
         - backend/dep/**
-        - backend/crud_lambda.py  
+        - backend/crud_lambda.py
         - backend/import_lambda.py
     events:
       - eventBridge:
@@ -102,20 +106,31 @@ functions:
               - person.updated
               - person.deleted
               - people.imported
+  
+  healthHandler:
+    handler: backend.health_lambda.lambda_handler
+    package:
+      include:
+        - backend/__init__.py
+        - backend/dep/**
+        - backend/health_lambda.py
+    events:
+      - http:
+          path: api/health
+          method: get
+          cors: true
 
 resources:
   Resources:
-    # Bus customizado para eventos de pessoas
     PeopleBus:
       Type: AWS::Events::EventBus
       Properties:
         Name: ${self:provider.environment.EVENT_BUS_NAME}
 
-    # Tabela DynamoDB com dois GSIs
     PeopleTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ${self:provider.environment.TABLE_NAME}
+        TableName: ${self:provider.environment.DYNAMODB_TABLE_NAME}
         BillingMode: PAY_PER_REQUEST
         AttributeDefinitions:
           - AttributeName: id
@@ -141,7 +156,6 @@ resources:
             Projection:
               ProjectionType: ALL
 
-  # Outputs úteis após deploy
   Outputs:
     ApiGatewayUrl:
       Description: "URL base do API Gateway"
@@ -157,4 +171,4 @@ resources:
         Fn::GetAtt: [PeopleBus, Arn]
     DynamoTableName:
       Description: "Nome da tabela DynamoDB"
-      Value: ${self:provider.environment.TABLE_NAME}
+      Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}

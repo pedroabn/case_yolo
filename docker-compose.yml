@@ -10,15 +10,34 @@ services:
       - /app/node_modules
     environment:
       - VITE_API_URL=${VITE_API_URL}
+      - NODE_ENV=development
     env_file:
       - .env
+    depends_on:
+      - backend
+    networks:
+      - yolo-network
 
   backend:
     build:
       context: .
       dockerfile: dockerfile.backend
+    ports:                          # EXPOR PORTA
+      - "8000:8000"
     volumes:
       - .:/app
-      - ~/.aws:/root/.aws:ro
+      - ~/.aws:/root/.aws:ro        # Credenciais AWS
     env_file:
       - .env
+    environment:
+      - LOCAL_SYNC=true
+      - DYNAMODB_TABLE_NAME=case_yolo
+      - EVENT_BUS_NAME=yolo-people-bus
+      - AWS_REGION=us-east-2
+      - API_YOLO=${API_YOLO}
+    networks:
+      - yolo-network
+
+networks:                           # REDE COMPARTILHADA
+  yolo-network:
+    driver: bridge

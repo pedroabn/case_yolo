@@ -1,8 +1,4 @@
 # Usadas dentro do Lambda (empacotadas no deploy)
 boto3==1.42.70
 requests==2.32.5
-
-# Apenas desenvolvimento local — não vão para o pacote Lambda
-flask>=3.0.0
-flask-cors>=4.0.0
 python-dotenv>=1.0.0

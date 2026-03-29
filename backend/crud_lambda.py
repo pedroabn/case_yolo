@@ -13,6 +13,9 @@ Evento esperado (formato EventBridge):
 
 import json
 import os
+import sys
+import importlib
+from typing import Dict, Any, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -25,12 +28,10 @@ dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("DYNAMODB_TABLE_NAME")
 table = dynamodb.Table(TABLE_NAME)
 
-# Mapeamento detail-type → handler
 _ROUTES = {}
 
 
 def _route(detail_type: str):
-    """Decorator para registrar handlers por detail-type."""
     def decorator(fn):
         _ROUTES[detail_type] = fn
         return fn
@@ -38,14 +39,13 @@ def _route(detail_type: str):
 
 
 # ---------------------------------------------------------------------------
-# Handler principal (entry point do Lambda)
+# Handler principal
 # ---------------------------------------------------------------------------
 
 def lambda_handler(event, context):
     detail_type = event.get("detail-type", "")
     detail = event.get("detail", {})
 
-    # EventBridge serializa detail como string em alguns cenários
     if isinstance(detail, str):
         detail = json.loads(detail)
 
@@ -59,25 +59,23 @@ def lambda_handler(event, context):
     try:
         return handler_fn(detail)
     except Exception as exc:
-        # Re-raise para o EventBridge tentar novamente (retry policy)
         print(f"[ERROR crud_lambda] {detail_type}: {exc}")
         raise
 
 
 # ---------------------------------------------------------------------------
-# Handlers registrados
+# Handlers
 # ---------------------------------------------------------------------------
 
 @_route("person.created")
 def _create(data: dict):
-    # Unicidade de e-mail via GSI
     existing = table.query(
         IndexName="EmailIndex",
         KeyConditionExpression=Key("email").eq(data["email"]),
     )
     conflict = [i for i in existing.get("Items", []) if i["id"] != data.get("id")]
     if conflict:
-        print(f"[WARN] E-mail duplicado ignorado: {data['email']}")
+        print(f"[WARN] E-mail duplicado: {data['email']}")
         return _respond(409, {"message": "E-mail já cadastrado"})
 
     table.put_item(Item=data)
@@ -91,7 +89,6 @@ def _update(data: dict):
     if not person_id:
         return _respond(400, {"message": "ID ausente no evento"})
 
-    # Verifica unicidade do e-mail se estiver sendo alterado
     if "email" in data:
         existing = table.query(
             IndexName="EmailIndex",
@@ -99,7 +96,6 @@ def _update(data: dict):
         )
         conflict = [i for i in existing.get("Items", []) if i["id"] != person_id]
         if conflict:
-            print(f"[WARN] E-mail em conflito: {data['email']}")
             return _respond(409, {"message": "E-mail em uso por outro usuário"})
 
     immutable = {"id", "dataCadastro"}
@@ -120,9 +116,8 @@ def _update(data: dict):
             ExpressionAttributeValues=attr_values,
             ReturnValues="ALL_NEW",
         )
-        updated = result.get("Attributes", {})
         print(f"[INFO] Atualizado: {person_id}")
-        return _respond(200, updated)
+        return _respond(200, result.get("Attributes", {}))
     except ClientError as exc:
         raise RuntimeError(exc.response["Error"]["Message"]) from exc
 
@@ -140,9 +135,35 @@ def _delete(data: dict):
 
 @_route("people.imported")
 def _import(data: dict):
-    """Delega para o import_lambda que já contém a lógica de importação."""
-    import import_lambda  # import tardio para manter lambdas desacopladas
-    return import_lambda.lambda_handler({}, {})
+    """
+    Delega para o import_lambda.
+    Usa importlib.import_module() para maior compatibilidade com AWS Lambda.
+    """
+    print(f"[INFO crud_lambda] Delegando para import_lambda")
+    print(f"[DEBUG crud_lambda] TABLE_NAME={os.environ.get('DYNAMODB_TABLE_NAME')}")
+    print(f"[DEBUG crud_lambda] API_YOLO={os.environ.get('API_YOLO', 'NÃO DEFINIDO')}")
+    print(f"[DEBUG crud_lambda] EVENT_BUS_NAME={os.environ.get('EVENT_BUS_NAME', 'NÃO DEFINIDO')}")
+
+    try:
+        # Usar importlib para maior compatibilidade com AWS Lambda runtime
+        # Evita problemas de path e sys.path em ambiente Lambda
+        import_lambda_module = importlib.import_module('import_lambda')
+        return import_lambda_module.lambda_handler({}, {})
+    except ModuleNotFoundError as e:
+        error_msg = f"Não conseguiu importar import_lambda: {e}"
+        print(f"[ERROR crud_lambda] {error_msg}")
+        return _respond(500, {"message": error_msg})
+    except Exception as exc:
+        error_msg = f"Erro ao executar import_lambda: {exc}"
+        print(f"[ERROR crud_lambda] {error_msg}")
+        return _respond(500, {"message": error_msg})
+        # Tentar com path absoluto
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+        print(f"[DEBUG] sys.path atualizado: {sys.path[:3]}")
+        import_lambda = importlib.import_module('import_lambda')
+        return import_lambda.lambda_handler({}, {})
 
 
 # ---------------------------------------------------------------------------

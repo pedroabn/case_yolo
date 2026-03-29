@@ -9,6 +9,8 @@ Em dev local (LOCAL_SYNC=true): chama crud_lambda diretamente para simular o flu
 
 import json
 import os
+import sys
+import importlib
 import uuid
 from datetime import datetime
 
@@ -128,7 +130,15 @@ def _dispatch(detail_type: str, detail: dict):
     Dev local → chama crud_lambda diretamente (síncrono, retorna a resposta)
     """
     if LOCAL_SYNC:
-        import backend.crud_lambda as crud_lambda  # import tardio para não quebrar o deploy na AWS
+        try:
+            crud_lambda = importlib.import_module('crud_lambda')
+        except ModuleNotFoundError:
+            task_dir = os.path.dirname(os.path.abspath(__file__))
+            if task_dir not in sys.path:
+                sys.path.insert(0, task_dir)
+            print(f"[DEBUG publisher] sys.path atualizado para LOCAL_SYNC: {sys.path[:3]}")
+            crud_lambda = importlib.import_module('crud_lambda')
+        
         bridge_event = {
             "source": EVENT_SOURCE,
             "detail-type": detail_type,
