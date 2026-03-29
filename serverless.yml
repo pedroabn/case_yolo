@@ -1,4 +1,5 @@
 service: yolo-coliving-api
+
 package:
   individually: true
   patterns:
@@ -17,19 +18,32 @@ package:
     - "!__pycache__/"
     - "!*.pyc"
     - "!lambda_function.py"
+
 provider:
   name: aws
   runtime: python3.11
   region: us-east-2
-  timeout: 28
+  cors:
+    origin: '*'
+    headers:
+      - Content-Type
+      - Authorization
+      - X-Requested-With
+      - X-Amz-Date
+      - X-Amz-Security-Token
+      - X-Api-Key
+    allowCredentials: false
+    maxAge: 86400
   environment:
     DYNAMODB_TABLE_NAME: case_yolo
-    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME, 'yolo-api-bus'}
-    API_YOLO: ${env:API_YOLO, 'https://3ji5haxzr9.execute-api.us-east-1.amazonaws.com/dev/caseYolo'}
-    LOCAL_SYNC: ${env:LOCAL_SYNC, 'false'}
+    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+    API_YOLO: ${env:API_YOLO}
+    LOCAL_SYNC: ${env:LOCAL_SYNC}
+
   iam:
     role:
       statements:
+
         - Effect: Allow
           Action:
             - dynamodb:Query
@@ -41,73 +55,118 @@ provider:
           Resource:
             - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/case_yolo"
             - Fn::Sub: "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/case_yolo/index/*"
+
         - Effect: Allow
           Action:
             - events:PutEvents
           Resource:
             - Fn::Sub: "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}"
+
         - Effect: Allow
           Action:
             - logs:CreateLogGroup
             - logs:CreateLogStream
             - logs:PutLogEvents
           Resource: "*"
+
 functions:
+
   readerHandler:
     handler: backend/reader_lambda.lambda_handler
-    timeout: 28
     memorySize: 256
+
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/reader_lambda.py"
         - "backend/import_lambda.py"
+
     events:
+
       - http:
           path: api/people
           method: get
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+              - X-Requested-With
+              - X-Amz-Date
+              - X-Api-Key
+              - X-Amz-Security-Token
+            allowCredentials: false
+
       - http:
           path: api/people/{id}
           method: get
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+
   publisherHandler:
     handler: backend/publisher_lambda.lambda_handler
-    timeout: 28
     memorySize: 256
+
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/publisher_lambda.py"
         - "backend/crud_lambda.py"
         - "backend/import_lambda.py"
+
     events:
+
       - http:
           path: api/people
           method: post
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+
       - http:
           path: api/people/{id}
           method: put
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+
       - http:
           path: api/people/{id}
           method: delete
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+
       - http:
           path: api/import
           method: post
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+
   crudHandler:
     handler: backend/crud_lambda.lambda_handler
-    timeout: 28
     memorySize: 512
+
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/crud_lambda.py"
         - "backend/import_lambda.py"
+
     events:
+
       - eventBridge:
           eventBus: !Ref PeopleBus
           pattern:
@@ -118,66 +177,95 @@ functions:
               - person.updated
               - person.deleted
               - people.imported
+
   healthHandler:
     handler: backend/health_lambda.lambda_handler
-    timeout: 10
     memorySize: 128
+
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/health_lambda.py"
+
     events:
+
       - http:
           path: api/health
           method: get
-          cors: true
+          cors:
+            origin: "*"
+            headers:
+              - Content-Type
+              - Authorization
+
 resources:
+
   Resources:
+
     PeopleBus:
       Type: AWS::Events::EventBus
       Properties:
         Name: ${self:provider.environment.EVENT_BUS_NAME}
       DeletionPolicy: Retain
+
     PeopleTable:
       Type: AWS::DynamoDB::Table
       Properties:
+
         TableName: ${self:provider.environment.DYNAMODB_TABLE_NAME}
+
         BillingMode: PAY_PER_REQUEST
+
         AttributeDefinitions:
+
           - AttributeName: id
             AttributeType: S
+
           - AttributeName: email
             AttributeType: S
+
           - AttributeName: tipo
             AttributeType: S
+
         KeySchema:
+
           - AttributeName: id
             KeyType: HASH
+
         GlobalSecondaryIndexes:
+
           - IndexName: EmailIndex
             KeySchema:
               - AttributeName: email
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+
           - IndexName: TipoIndex
             KeySchema:
               - AttributeName: tipo
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+
       DeletionPolicy: Retain
+
   Outputs:
+
     ApiGatewayUrl:
-      Description: "URL base do API Gateway"
+      Description: URL base do API Gateway
       Value:
         Fn::Join:
           - ""
           - - "https://"
             - Ref: ApiGatewayRestApi
-            - ".execute-api.${self:provider.region}.amazonaws.com/"
+            - ".execute-api."
+            - ${self:provider.region}
+            - ".amazonaws.com/"
+
     DynamoTableName:
       Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}
+
     EventBusArn:
       Value:
-        Fn::Sub: "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}"
+        Fn::Sub: arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}
