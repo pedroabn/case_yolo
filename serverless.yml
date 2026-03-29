@@ -23,20 +23,10 @@ provider:
   name: aws
   runtime: python3.11
   region: us-east-2
-  cors:
-    origin: '*'
-    headers:
-      - Content-Type
-      - Authorization
-      - X-Requested-With
-      - X-Amz-Date
-      - X-Amz-Security-Token
-      - X-Api-Key
-    allowCredentials: false
-    maxAge: 86400
+
   environment:
     DYNAMODB_TABLE_NAME: case_yolo
-    EVENT_BUS_NAME: ${env:EVENT_BUS_NAME}
+    EVENT_BUS_NAME: yolo-api-bus
     API_YOLO: ${env:API_YOLO}
     LOCAL_SYNC: ${env:LOCAL_SYNC}
 
@@ -60,7 +50,7 @@ provider:
           Action:
             - events:PutEvents
           Resource:
-            - Fn::Sub: "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}"
+            - Fn::GetAtt: [YoloApiBus, Arn]
 
         - Effect: Allow
           Action:
@@ -77,9 +67,9 @@ functions:
 
     package:
       patterns:
-        - "backend/__init__.py"
-        - "backend/reader_lambda.py"
-        - "backend/import_lambda.py"
+        - backend/reader_lambda.py
+        - backend/import_lambda.py
+        - backend/__init__.py
 
     events:
 
@@ -87,24 +77,22 @@ functions:
           path: api/people
           method: get
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
               - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
 
       - http:
           path: api/people/{id}
           method: get
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
               - Authorization
+
 
   publisherHandler:
     handler: backend/publisher_lambda.lambda_handler
@@ -112,10 +100,10 @@ functions:
 
     package:
       patterns:
-        - "backend/__init__.py"
-        - "backend/publisher_lambda.py"
-        - "backend/crud_lambda.py"
-        - "backend/import_lambda.py"
+        - backend/publisher_lambda.py
+        - backend/crud_lambda.py
+        - backend/import_lambda.py
+        - backend/__init__.py
 
     events:
 
@@ -123,7 +111,8 @@ functions:
           path: api/people
           method: post
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
               - Authorization
@@ -132,7 +121,8 @@ functions:
           path: api/people/{id}
           method: put
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
               - Authorization
@@ -141,7 +131,8 @@ functions:
           path: api/people/{id}
           method: delete
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
               - Authorization
@@ -150,10 +141,12 @@ functions:
           path: api/import
           method: post
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
               - Authorization
+
 
   crudHandler:
     handler: backend/crud_lambda.lambda_handler
@@ -161,14 +154,15 @@ functions:
 
     package:
       patterns:
-        - "backend/__init__.py"
-        - "backend/crud_lambda.py"
-        - "backend/import_lambda.py"
+        - backend/crud_lambda.py
+        - backend/import_lambda.py
+        - backend/__init__.py
 
     events:
 
       - eventBridge:
-          eventBus: !Ref PeopleBus
+          eventBus:
+            Ref: YoloApiBus
           pattern:
             source:
               - yolo.people
@@ -178,14 +172,15 @@ functions:
               - person.deleted
               - people.imported
 
+
   healthHandler:
     handler: backend/health_lambda.lambda_handler
     memorySize: 128
 
     package:
       patterns:
-        - "backend/__init__.py"
-        - "backend/health_lambda.py"
+        - backend/health_lambda.py
+        - backend/__init__.py
 
     events:
 
@@ -193,27 +188,27 @@ functions:
           path: api/health
           method: get
           cors:
-            origin: "*"
+            origins:
+              - "*"
             headers:
               - Content-Type
-              - Authorization
+
 
 resources:
 
   Resources:
 
-    PeopleBus:
+    YoloApiBus:
       Type: AWS::Events::EventBus
       Properties:
-        Name: ${self:provider.environment.EVENT_BUS_NAME}
-      DeletionPolicy: Retain
+        Name: yolo-api-bus
+
 
     PeopleTable:
       Type: AWS::DynamoDB::Table
       Properties:
 
-        TableName: ${self:provider.environment.DYNAMODB_TABLE_NAME}
-
+        TableName: case_yolo
         BillingMode: PAY_PER_REQUEST
 
         AttributeDefinitions:
@@ -227,10 +222,12 @@ resources:
           - AttributeName: tipo
             AttributeType: S
 
+
         KeySchema:
 
           - AttributeName: id
             KeyType: HASH
+
 
         GlobalSecondaryIndexes:
 
@@ -241,6 +238,7 @@ resources:
             Projection:
               ProjectionType: ALL
 
+
           - IndexName: TipoIndex
             KeySchema:
               - AttributeName: tipo
@@ -248,7 +246,6 @@ resources:
             Projection:
               ProjectionType: ALL
 
-      DeletionPolicy: Retain
 
   Outputs:
 
@@ -261,11 +258,15 @@ resources:
             - Ref: ApiGatewayRestApi
             - ".execute-api."
             - ${self:provider.region}
-            - ".amazonaws.com/"
+            - ".amazonaws.com/dev"
 
-    DynamoTableName:
-      Value: ${self:provider.environment.DYNAMODB_TABLE_NAME}
 
     EventBusArn:
       Value:
-        Fn::Sub: arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/${self:provider.environment.EVENT_BUS_NAME}
+        Fn::GetAtt:
+          - YoloApiBus
+          - Arn
+
+
+    DynamoTableName:
+      Value: case_yolo
