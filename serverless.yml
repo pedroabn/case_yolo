@@ -1,5 +1,6 @@
 service: yolo-coliving-api
 
+
 package:
   individually: true
   patterns:
