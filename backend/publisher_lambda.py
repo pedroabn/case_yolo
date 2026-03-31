@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 import boto3
 
+
 # CONFIG
 EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "yolo-people-bus")
 EVENT_SOURCE = "yolo.people"
@@ -41,10 +42,14 @@ def lambda_handler(event, context):
     try:
         if http_method == "POST":
             if "/import" in path:
-                return _dispatch("people.imported", {})
+                _dispatch("people.imported", {})  
+                return _respond(202, {
+                    "message": "Importação disparada para processamento assíncrono",
+                    "status": "accepted"
+                })
             body = json.loads(event.get("body") or "{}")
             return _handle_create(body)
-
+        
         elif http_method == "PUT":
             body = json.loads(event.get("body") or "{}")
             return _handle_update(path_params.get("id"), body)
@@ -113,7 +118,6 @@ def _handle_delete(person_id: str):
 # ---------------------------------------------------------------------------
 def _dispatch(detail_type: str, detail: dict):
     """
-    Produção  → PutEvents no EventBridge (async, retorna None)
     Dev local → chama crud_lambda diretamente (síncrono, retorna a resposta)
     """
     if LOCAL_SYNC:
@@ -132,19 +136,17 @@ def _dispatch(detail_type: str, detail: dict):
             "detail": detail,
         }
         return crud_lambda.lambda_handler(bridge_event, {})
-
-    # Produção
+    # Produção: publica no EventBridge
     _get_events_client().put_events(
-        Entries=[
-            {
-                "Source": EVENT_SOURCE,
-                "DetailType": detail_type,
-                "Detail": json.dumps(detail, default=str),
-                "EventBusName": EVENT_BUS_NAME,
-            }
-        ]
+        Entries=[{
+            "Source": EVENT_SOURCE,
+            "DetailType": detail_type,
+            "Detail": json.dumps(detail, default=str),
+            "EventBusName": EVENT_BUS_NAME,
+        }]
     )
-    return None
+    # Retorna resposta padrão para endpoints que dependem do retorno
+    return _respond(202, {"message": "Evento publicado", "detail_type": detail_type})
 
 # ---------------------------------------------------------------------------
 # Helpers

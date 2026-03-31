@@ -3,26 +3,35 @@ import {
   Users, UserPlus, Search, Filter,
   Edit2, Trash2,
   X, Save, Loader2, CheckCircle2,
-  AlertCircle, Camera, User, RefreshCw, Zap
+  AlertCircle, Camera, User, Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import axios from 'axios';
 import { Person, PersonType, PERSON_TYPES } from './types';
- 
-// VITE_API_URL já inclui /api no final:
+
+// ------------------------------------------------------------------
+// Configuração da API
+// ------------------------------------------------------------------
+// VITE_API_URL já inclui /api no final
 // ex: https://xxx.execute-api.us-east-2.amazonaws.com/dev/api
-// Logo as rotas são: ${API_BASE}/people, ${API_BASE}/import etc.
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
- 
+
 type NotificationType = 'success' | 'error' | 'processing';
-interface Notification { message: string; type: NotificationType; }
- 
+
+interface Notification {
+  message: string;
+  type: NotificationType;
+}
+
 const REFETCH_DELAY_MS = 2000;
- 
+
 export default function App() {
+  // ------------------------------------------------------------------
+  // Estados
+  // ------------------------------------------------------------------
   const [people, setPeople] = useState<Person[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('Todos');
+  const [filter, setFilter] = useState('Todos');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [notification, setNotification] = useState<Notification | null>(null);
@@ -31,17 +40,19 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isFetchingCep, setIsFetchingCep] = useState(false);
- 
   const [formData, setFormData] = useState({
-    nome: '', telefone: '', email: '',
+    nome: '',
+    telefone: '',
+    email: '',
     tipo: 'Hóspede' as PersonType,
-    avatarUrl: '', cep: '', endereco: '',
+    avatarUrl: '',
+    cep: '',
+    endereco: '',
   });
 
   // ------------------------------------------------------------------
-  // Fetch
+  // Fetch - Carregar dados do DynamoDB
   // ------------------------------------------------------------------
-
   const fetchPeople = useCallback(async () => {
     try {
       setLoading(true);
@@ -54,11 +65,19 @@ export default function App() {
       // API Gateway pode entregar o body como string em vez de objeto
       let raw = response.data;
       if (typeof raw === 'string') {
-        try { raw = JSON.parse(raw); } catch { raw = []; }
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          raw = [];
+        }
       }
       // Fallback: envelope { body: "[...]" }
       if (raw && !Array.isArray(raw) && typeof raw.body === 'string') {
-        try { raw = JSON.parse(raw.body); } catch { raw = []; }
+        try {
+          raw = JSON.parse(raw.body);
+        } catch {
+          raw = [];
+        }
       }
 
       const data: Person[] = Array.isArray(raw) ? raw : [];
@@ -74,9 +93,15 @@ export default function App() {
   }, [filter, searchTerm]);
 
   // ------------------------------------------------------------------
+  // ⭐ CARREGAMENTO AUTOMÁTICO AO MONTAR O COMPONENTE
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    fetchPeople();
+  }, [fetchPeople]);
+
+  // ------------------------------------------------------------------
   // Notificações
   // ------------------------------------------------------------------
-
   const showNotification = (message: string, type: NotificationType) => {
     setNotification({ message, type });
     const duration = type === 'processing' ? 2000 : 3000;
@@ -98,7 +123,6 @@ export default function App() {
   // ------------------------------------------------------------------
   // Salvar (criar / editar)
   // ------------------------------------------------------------------
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -120,7 +144,9 @@ export default function App() {
       if (response.status === 202) {
         // Async: EventBridge vai processar
         handleAsyncResponse(
-          editingPerson ? 'Cadastro atualizado com sucesso!' : 'Pessoa cadastrada com sucesso!'
+          editingPerson
+            ? 'Cadastro atualizado com sucesso!'
+            : 'Pessoa cadastrada com sucesso!'
         );
       } else {
         // Síncrono (dev LOCAL_SYNC retorna 200/201)
@@ -131,7 +157,9 @@ export default function App() {
         );
       }
     } catch (error: unknown) {
-      const axiosError = error as { response?: { data?: { message?: string } } };
+      const axiosError = error as {
+        response?: { data?: { message?: string } };
+      };
       const message =
         axiosError.response?.data?.message || 'Erro inesperado ao salvar.';
       setFormError(message);
@@ -144,16 +172,14 @@ export default function App() {
   // ------------------------------------------------------------------
   // Excluir
   // ------------------------------------------------------------------
-
   const handleDelete = (id: string) => setDeleteId(id);
 
   const confirmDelete = async () => {
     if (!deleteId) return;
     setIsSaving(true);
+
     try {
-      const response = await axios.delete(
-        `${API_BASE}/people/${deleteId}`
-      );
+      const response = await axios.delete(`${API_BASE}/people/${deleteId}`);
 
       if (response.status === 202) {
         handleAsyncResponse('Registro excluído com sucesso!');
@@ -162,7 +188,9 @@ export default function App() {
         showNotification('Registro excluído!', 'success');
       }
     } catch (error: unknown) {
-      const axiosError = error as { response?: { data?: { message?: string } } };
+      const axiosError = error as {
+        response?: { data?: { message?: string } };
+      };
       const message =
         axiosError.response?.data?.message || 'Erro ao excluir registro.';
       showNotification(message, 'error');
@@ -173,30 +201,8 @@ export default function App() {
   };
 
   // ------------------------------------------------------------------
-  // Importar base externa
-  // ------------------------------------------------------------------
-
-  const handleImport = async () => {
-    setIsSaving(true);
-    try {
-      const response = await axios.post(`${API_BASE}/import`);
-      if (response.status === 202) {
-        handleAsyncResponse('Importação concluída!');
-      } else {
-        await fetchPeople();
-        showNotification('Importação concluída!', 'success');
-      }
-    } catch {
-      showNotification('Erro na importação', 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  // ------------------------------------------------------------------
   // Formulário
   // ------------------------------------------------------------------
-
   const startEdit = (person: Person) => {
     setEditingPerson(person);
     setFormData({
@@ -213,8 +219,13 @@ export default function App() {
 
   const resetForm = () => {
     setFormData({
-      nome: '', telefone: '', email: '',
-      tipo: 'Hóspede', avatarUrl: '', cep: '', endereco: '',
+      nome: '',
+      telefone: '',
+      email: '',
+      tipo: 'Hóspede',
+      avatarUrl: '',
+      cep: '',
+      endereco: '',
     });
     setEditingPerson(null);
     setFormError(null);
@@ -224,13 +235,16 @@ export default function App() {
   const handleCepBlur = async () => {
     const cep = formData.cep.replace(/\D/g, '');
     if (cep.length !== 8) return;
+
     try {
       setIsFetchingCep(true);
       setFormError(null);
-      const response = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
+      const response = await axios.get(
+        `https://viacep.com.br/ws/${cep}/json/`
+      );
       if (response.data.erro) throw new Error('CEP não encontrado.');
       const { logradouro, bairro, localidade, uf } = response.data;
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         endereco: `${logradouro}, ${bairro}, ${localidade} - ${uf}`,
       }));
@@ -248,7 +262,7 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onloadend = () => {
-      setFormData(prev => ({ ...prev, avatarUrl: reader.result as string }));
+      setFormData((prev) => ({ ...prev, avatarUrl: reader.result as string }));
     };
     reader.readAsDataURL(file);
   };
@@ -256,171 +270,198 @@ export default function App() {
   // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
-
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100 p-8">
       {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-3xl font-bold tracking-tight text-primary">
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-[#fc0494] flex items-center gap-3">
+              <Users 
+                className="w-8 h-8" 
+                color="#fc0494" 
+                strokeWidth={2.5} 
+              />
               Cadastro de Pessoas
             </h1>
+            <p className="text-zinc-500 mt-1">
+              Yolo Coliving — Serverless Event-Driven
+            </p>
           </div>
-          <p className="text-zinc-500">Yolo Coliving — Serverless Event-Driven</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleImport}
-            className="btn-secondary flex items-center gap-2 text-sm"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Importar Base
-          </button>
           <button
             onClick={() => setIsFormOpen(true)}
             className="btn-primary flex items-center gap-2"
           >
-            <UserPlus className="w-4 h-4" />
+            <UserPlus className="w-5 h-5" />
             Nova Pessoa
           </button>
         </div>
-      </header>
+      </div>
 
       {/* Table */}
-      <div className="glass-card overflow-hidden">
-        {/* Filters */}
-        <div className="p-4 border-b border-zinc-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-50/50">
-          <div className="relative flex-1 max-w-md flex items-center bg-white border border-zinc-200 rounded-lg px-2">
-            <Search className="w-4 h-4 text-zinc-400 ml-1 mr-2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Pesquisar por nome ou email..."
-              className="flex-1 py-2 bg-transparent focus:outline-none text-sm"
-            />
+      <div className="max-w-7xl mx-auto">
+        <div className="glass-card overflow-hidden">
+          {/* Filters */}
+          <div className="p-4 border-b border-zinc-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-50/50">
+            <div className="relative flex-1 max-w-md flex items-center bg-white border border-zinc-200 rounded-lg px-2">
+              <Search className="w-4 h-4 text-zinc-400 ml-1 mr-2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Pesquisar por nome ou email..."
+                className="flex-1 py-2 bg-transparent focus:outline-none text-sm"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-zinc-400" />
+              <select
+                className="input-field w-auto min-w-[150px]"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              >
+                <option value="Todos">Todos os Tipos</option>
+                {PERSON_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-zinc-400" />
-            <select
-              className="input-field w-auto min-w-[150px]"
-              value={filter}
-              onChange={e => setFilter(e.target.value)}
-            >
-              <option value="Todos">Todos os Tipos</option>
-              {PERSON_TYPES.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-        </div>
 
-        {/* Table body */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-50/50 border-b border-zinc-100">
-                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Nome</th>
-                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Contato</th>
-                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Tipo</th>
-                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Cadastro</th>
-                <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-zinc-300" />
-                    <p className="mt-2 text-zinc-500">Carregando dados...</p>
-                  </td>
+          {/* Table body */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-zinc-50/50 border-b border-zinc-100">
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    Nome
+                  </th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    Contato
+                  </th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    Tipo
+                  </th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    Cadastro
+                  </th>
+                  <th className="px-6 py-4 text-xs font-semibold text-zinc-500 uppercase tracking-wider text-right">
+                    Ações
+                  </th>
                 </tr>
-              ) : people.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center">
-                    <Users className="w-12 h-12 mx-auto text-zinc-200 mb-4" />
-                    <p className="text-zinc-500 font-medium">Nenhuma pessoa encontrada.</p>
-                    <p className="text-zinc-400 text-sm">
-                      Clique em "Importar Base" ou cadastre uma nova pessoa.
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                people.map(person => (
-                  <motion.tr
-                    layout
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    key={person.id}
-                    className="hover:bg-zinc-50/50 transition-colors group"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {person.avatarUrl ? (
-                          <img
-                            src={person.avatarUrl}
-                            alt={person.nome}
-                            className="w-10 h-10 rounded-full object-cover border border-zinc-200"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center border border-zinc-200">
-                            <User className="w-5 h-5 text-[#2595d0]" />
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {loading ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <Loader2 className="w-8 h-8 animate-spin mx-auto text-zinc-300" />
+                      <p className="mt-2 text-zinc-500">Carregando dados...</p>
+                    </td>
+                  </tr>
+                ) : people.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <Users className="w-12 h-12 mx-auto text-zinc-200 mb-4" />
+                      <p className="text-zinc-500 font-medium">
+                        Nenhuma pessoa encontrada.
+                      </p>
+                      <p className="text-zinc-400 text-sm">
+                        Clique em "Nova Pessoa" para cadastrar.
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  people.map((person) => (
+                    <motion.tr
+                      layout
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      key={person.id}
+                      className="hover:bg-zinc-50/50 transition-colors group"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          {person.avatarUrl ? (
+                            <img
+                              src={person.avatarUrl}
+                              alt={person.nome}
+                              className="w-10 h-10 rounded-full object-cover border border-zinc-200"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-zinc-100 flex items-center justify-center border border-zinc-200">
+                              <User className="w-5 h-5 text-[#2595d0]" />
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-medium text-zinc-900">
+                              {person.nome}
+                            </div>
+                            <div className="text-xs text-zinc-400 font-mono">
+                              {person.id.split('-')[0]}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-zinc-600">
+                          {person.email}
+                        </div>
+                        <div className="text-sm text-zinc-400">
+                          {person.telefone}
+                        </div>
+                        {person.endereco && (
+                          <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1">
+                            <span className="w-1 h-1 rounded-full bg-zinc-300" />
+                            {person.endereco}
                           </div>
                         )}
-                        <div>
-                          <div className="font-medium text-zinc-900">{person.nome}</div>
-                          <div className="text-xs text-zinc-400 font-mono">
-                            {person.id.split('-')[0]}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-zinc-600">{person.email}</div>
-                      <div className="text-sm text-zinc-400">{person.telefone}</div>
-                      {person.endereco && (
-                        <div className="text-[10px] text-zinc-400 mt-1 flex items-center gap-1">
-                          <span className="w-1 h-1 rounded-full bg-zinc-300" />
-                          {person.endereco}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        ${person.tipo === 'Hóspede' ? 'bg-blue-50 text-blue-700' :
-                          person.tipo === 'Proprietário' ? 'bg-purple-50 text-purple-700' :
-                          person.tipo === 'Operador' ? 'bg-amber-50 text-amber-700' :
-                          'bg-emerald-50 text-emerald-700'}
-                      `}>
-                        {person.tipo}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-zinc-500">
-                      {new Date(person.dataCadastro).toLocaleDateString('pt-BR')}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => startEdit(person)}
-                          className="p-2 text-zinc-400 hover:text-[#df2180] hover:bg-[#df2180]/5 rounded-lg border border-transparent hover:border-[#df2180]/20 transition-all"
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                          ${
+                            person.tipo === 'Hóspede'
+                              ? 'bg-blue-50 text-blue-700'
+                              : person.tipo === 'Proprietário'
+                              ? 'bg-purple-50 text-purple-700'
+                              : person.tipo === 'Operador'
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
                         >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(person.id)}
-                          className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                          {person.tipo}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-zinc-500">
+                        {new Date(person.dataCadastro).toLocaleDateString(
+                          'pt-BR'
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => startEdit(person)}
+                            className="p-2 text-zinc-400 hover:text-[#df2180] hover:bg-[#df2180]/5 rounded-lg border border-transparent hover:border-[#df2180]/20 transition-all"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(person.id)}
+                            className="p-2 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg border border-transparent hover:border-red-100 transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -443,12 +484,17 @@ export default function App() {
             >
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold flex items-center gap-3 text-zinc-900">
-                  {editingPerson
-                    ? <Edit2 className="w-5 h-5 text-[#df2180]" />
-                    : <UserPlus className="w-5 h-5 text-[#df2180]" />}
+                  {editingPerson ? (
+                    <Edit2 className="w-5 h-5 text-[#df2180]" />
+                  ) : (
+                    <UserPlus className="w-5 h-5 text-[#df2180]" />
+                  )}
                   {editingPerson ? 'Atualizar Cadastro' : 'Novo Cadastro'}
                 </h2>
-                <button onClick={resetForm} className="p-2 hover:bg-zinc-100 rounded-full transition-colors">
+                <button
+                  onClick={resetForm}
+                  className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
+                >
                   <X className="w-5 h-5 text-zinc-400" />
                 </button>
               </div>
@@ -482,20 +528,29 @@ export default function App() {
                         )}
                         <label className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                           <Camera className="w-5 h-5 text-white" />
-                          <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={handleFileChange}
+                          />
                         </label>
                       </div>
                       {formData.avatarUrl && (
                         <button
                           type="button"
-                          onClick={() => setFormData(prev => ({ ...prev, avatarUrl: '' }))}
+                          onClick={() =>
+                            setFormData((prev) => ({ ...prev, avatarUrl: '' }))
+                          }
                           className="absolute -top-1 -right-1 bg-white shadow-md rounded-full p-1 text-zinc-400 hover:text-red-500 border border-zinc-100"
                         >
                           <X className="w-3 h-3" />
                         </button>
                       )}
                     </div>
-                    <p className="text-[10px] text-zinc-400 mt-1 font-bold uppercase tracking-tighter">Foto</p>
+                    <p className="text-[10px] text-zinc-400 mt-1 font-bold uppercase tracking-tighter">
+                      Foto
+                    </p>
                   </div>
 
                   {/* Campos principais */}
@@ -510,7 +565,12 @@ export default function App() {
                           required
                           className="input-field w-full text-sm"
                           value={formData.nome}
-                          onChange={e => setFormData(prev => ({ ...prev, nome: e.target.value }))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              nome: e.target.value,
+                            }))
+                          }
                           placeholder="Ex: Nome completo"
                         />
                       </div>
@@ -521,10 +581,17 @@ export default function App() {
                         <select
                           className="input-field w-full text-sm"
                           value={formData.tipo}
-                          onChange={e => setFormData(prev => ({ ...prev, tipo: e.target.value as PersonType }))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              tipo: e.target.value as PersonType,
+                            }))
+                          }
                         >
-                          {PERSON_TYPES.map(type => (
-                            <option key={type} value={type}>{type}</option>
+                          {PERSON_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -537,7 +604,12 @@ export default function App() {
                           required
                           className="input-field w-full text-sm"
                           value={formData.email}
-                          onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                          onChange={(e) =>
+                            setFormData((prev) => ({
+                              ...prev,
+                              email: e.target.value,
+                            }))
+                          }
                           placeholder="email@email.com"
                         />
                       </div>
@@ -550,12 +622,17 @@ export default function App() {
                           required
                           className="input-field w-full text-sm"
                           value={formData.telefone}
-                          onChange={e => {
+                          onChange={(e) => {
                             let val = e.target.value.replace(/\D/g, '');
                             if (val.length > 11) val = val.slice(0, 11);
-                            if (val.length > 2) val = `(${val.slice(0, 2)}) ${val.slice(2)}`;
-                            if (val.length > 9) val = `${val.slice(0, 9)}-${val.slice(9)}`;
-                            setFormData(prev => ({ ...prev, telefone: val }));
+                            if (val.length > 2)
+                              val = `(${val.slice(0, 2)}) ${val.slice(2)}`;
+                            if (val.length > 9)
+                              val = `${val.slice(0, 9)}-${val.slice(9)}`;
+                            setFormData((prev) => ({
+                              ...prev,
+                              telefone: val,
+                            }));
                           }}
                           placeholder="(81) 99999-9999"
                         />
@@ -569,17 +646,20 @@ export default function App() {
                   <div className="md:col-span-1">
                     <label className="text-[11px] font-bold text-zinc-500 mb-3 block uppercase tracking-wider flex items-center justify-between">
                       CEP
-                      {isFetchingCep && <Loader2 className="w-3 h-3 animate-spin text-[#df2180]" />}
+                      {isFetchingCep && (
+                        <Loader2 className="w-3 h-3 animate-spin text-[#df2180]" />
+                      )}
                     </label>
                     <input
                       type="text"
                       className="input-field w-full text-sm"
                       value={formData.cep}
-                      onChange={e => {
+                      onChange={(e) => {
                         let val = e.target.value.replace(/\D/g, '');
                         if (val.length > 8) val = val.slice(0, 8);
-                        if (val.length > 5) val = `${val.slice(0, 5)}-${val.slice(5)}`;
-                        setFormData(prev => ({ ...prev, cep: val }));
+                        if (val.length > 5)
+                          val = `${val.slice(0, 5)}-${val.slice(5)}`;
+                        setFormData((prev) => ({ ...prev, cep: val }));
                       }}
                       onBlur={handleCepBlur}
                       placeholder="00000-000"
@@ -593,7 +673,12 @@ export default function App() {
                       type="text"
                       className="input-field w-full text-sm"
                       value={formData.endereco}
-                      onChange={e => setFormData(prev => ({ ...prev, endereco: e.target.value }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          endereco: e.target.value,
+                        }))
+                      }
                       placeholder="Rua, Número, Bairro, Cidade - UF"
                     />
                   </div>
@@ -607,7 +692,11 @@ export default function App() {
                     <Save className="w-4 h-4" />
                     {editingPerson ? 'Salvar Alterações' : 'Confirmar Cadastro'}
                   </button>
-                  <button type="button" onClick={resetForm} className="btn-secondary flex-1 py-3 text-base font-bold">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="btn-secondary flex-1 py-3 text-base font-bold"
+                  >
                     Cancelar
                   </button>
                 </div>
@@ -637,7 +726,9 @@ export default function App() {
               <div className="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Trash2 className="w-8 h-8" />
               </div>
-              <h3 className="text-2xl font-bold text-zinc-900 mb-2">Confirmar Exclusão</h3>
+              <h3 className="text-2xl font-bold text-zinc-900 mb-2">
+                Confirmar Exclusão
+              </h3>
               <p className="text-zinc-500 mb-8">
                 Tem certeza? Esta ação não pode ser desfeita.
               </p>
@@ -692,14 +783,23 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
             className={`fixed bottom-8 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg flex items-center gap-3 z-50
-              ${notification.type === 'success' ? 'bg-zinc-900 text-white' :
-                notification.type === 'processing' ? 'bg-violet-600 text-white' :
-                'bg-red-600 text-white'}
-            `}
+              ${
+                notification.type === 'success'
+                  ? 'bg-zinc-900 text-white'
+                  : notification.type === 'processing'
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
           >
-            {notification.type === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-            {notification.type === 'processing' && <Zap className="w-5 h-5 text-violet-200 animate-pulse" />}
-            {notification.type === 'error' && <AlertCircle className="w-5 h-5" />}
+            {notification.type === 'success' && (
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+            )}
+            {notification.type === 'processing' && (
+              <Zap className="w-5 h-5 text-violet-200 animate-pulse" />
+            )}
+            {notification.type === 'error' && (
+              <AlertCircle className="w-5 h-5" />
+            )}
             <span className="font-medium">{notification.message}</span>
           </motion.div>
         )}
