@@ -64,124 +64,57 @@ functions:
   readerHandler:
     handler: backend/reader_lambda.lambda_handler
     memorySize: 256
-
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/reader_lambda.py"
         - "backend/import_lambda.py"
-
     events:
-
       - http:
           path: api/people
           method: get
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
-
+          cors: true
       - http:
           path: api/people/{id}
           method: get
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
+          cors: true
 
   publisherHandler:
     handler: backend/publisher_lambda.lambda_handler
     memorySize: 256
-
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/publisher_lambda.py"
         - "backend/crud_lambda.py"
         - "backend/import_lambda.py"
-
     events:
-
       - http:
           path: api/people
           method: post
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
-
+          cors: true
       - http:
           path: api/people/{id}
           method: put
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
-
+          cors: true
       - http:
           path: api/people/{id}
           method: delete
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
-
+          cors: true
       - http:
           path: api/import
           method: post
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-              - X-Requested-With
-              - X-Amz-Date
-              - X-Api-Key
-              - X-Amz-Security-Token
-            allowCredentials: false
+          cors: true
 
   crudHandler:
     handler: backend/crud_lambda.lambda_handler
     memorySize: 512
-
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/crud_lambda.py"
         - "backend/import_lambda.py"
-
     events:
-
       - eventBridge:
           eventBus: !Ref PeopleBus
           pattern:
@@ -196,23 +129,15 @@ functions:
   healthHandler:
     handler: backend/health_lambda.lambda_handler
     memorySize: 128
-
     package:
       patterns:
         - "backend/__init__.py"
         - "backend/health_lambda.py"
-
     events:
-
       - http:
           path: api/health
           method: get
-          cors:
-            origin: '*'
-            headers:
-              - Content-Type
-              - Authorization
-            allowCredentials: false
+          cors: true
 
 resources:
 

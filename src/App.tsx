@@ -48,22 +48,30 @@ export default function App() {
       const params = new URLSearchParams();
       if (filter && filter !== 'Todos') params.set('tipo', filter);
       if (searchTerm) params.set('search', searchTerm);
- 
-      // GET /people — reader_lambda auto-importa se tabela vazia
+
       const response = await axios.get(`${API_BASE}/people?${params}`);
-      setPeople(Array.isArray(response.data) ? response.data : []);
-    } catch {
+
+      // API Gateway pode entregar o body como string em vez de objeto
+      let raw = response.data;
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw); } catch { raw = []; }
+      }
+      // Fallback: envelope { body: "[...]" }
+      if (raw && !Array.isArray(raw) && typeof raw.body === 'string') {
+        try { raw = JSON.parse(raw.body); } catch { raw = []; }
+      }
+
+      const data: Person[] = Array.isArray(raw) ? raw : [];
+      console.log('[fetchPeople] recebido:', data.length, 'registros');
+      setPeople(data);
+    } catch (err) {
+      console.error('[fetchPeople] erro:', err);
       showNotification('Erro ao carregar pessoas', 'error');
       setPeople([]);
     } finally {
       setLoading(false);
     }
   }, [filter, searchTerm]);
- 
-  useEffect(() => {
-    const timer = setTimeout(fetchPeople, 300);
-    return () => clearTimeout(timer);
-  }, [fetchPeople]);
 
   // ------------------------------------------------------------------
   // Notificações
